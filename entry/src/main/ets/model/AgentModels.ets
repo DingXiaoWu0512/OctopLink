@@ -17,11 +17,14 @@ export class AgentModel {
   readonly unreadCount: number;
   readonly kind: string;
   readonly color: string;
+  readonly iconName: string;
+  readonly iconUrl: string;
+  readonly templateName: string;
 
   constructor(agentId: string, name: string, description: string, welcomeMessage: string,
     personaMbti: string, systemPrompt: string, defaultModel: string, state: string,
     isShared: boolean, isOwner: boolean, ownerUsername: string, unreadCount: number,
-    kind: string, color: string) {
+    kind: string, color: string, iconName: string, iconUrl: string, templateName: string) {
     this.agentId = agentId;
     this.name = name === '' ? '智能体' : name;
     this.description = description;
@@ -36,6 +39,9 @@ export class AgentModel {
     this.unreadCount = unreadCount;
     this.kind = kind;
     this.color = color;
+    this.iconName = iconName;
+    this.iconUrl = iconUrl;
+    this.templateName = templateName;
   }
 
   static fromRecord(rec: Record<string, Object>): AgentModel {
@@ -62,7 +68,10 @@ export class AgentModel {
       JsonHelper.getString(rec, 'owner_username', ''),
       JsonHelper.getNumber(rec, 'unread_count', 0),
       JsonHelper.getString(rec, 'kind', 'expert'),
-      JsonHelper.getString(rec, 'color', '')
+      JsonHelper.getString(rec, 'color', ''),
+      JsonHelper.getString(rec, 'icon_name', ''),
+      JsonHelper.getString(rec, 'icon_url', ''),
+      JsonHelper.getString(rec, 'template_name', '')
     );
   }
 

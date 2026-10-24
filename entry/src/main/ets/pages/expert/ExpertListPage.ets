@@ -18,6 +18,41 @@ class ExpertFilterOption {
   }
 }
 
+/** 专家头像：icon_url 优先，回退头像接口，失败回退 logo */
+@Component
+struct AgentAvatar {
+  @Prop agentId: string = '';
+  @Prop iconUrl: string = '';
+  @State failed: boolean = false;
+
+  private src(): string {
+    if (this.iconUrl !== '') {
+      return AgentService.assetUrl(this.iconUrl);
+    }
+    return AgentService.avatarUrl(this.agentId);
+  }
+
+  build() {
+    if (this.failed) {
+      Image($r('app.media.octop_logo'))
+        .width(42)
+        .height(42)
+        .borderRadius(21)
+        .backgroundColor($r('app.color.brand_light'))
+    } else {
+      Image(this.src())
+        .width(42)
+        .height(42)
+        .borderRadius(21)
+        .backgroundColor($r('app.color.brand_light'))
+        .objectFit(ImageFit.Cover)
+        .onError((event: ImageError): void => {
+          this.failed = true;
+        })
+    }
+  }
+}
+
 /** 专家一级 Tab（Cube 助手页式布局）：大标题 + 筛选 chips + 全宽卡片（卡片内开始对话） */
 @Component
 export struct ExpertListPage {
@@ -25,6 +60,7 @@ export struct ExpertListPage {
   @Prop topInset: number = 0;
   @Prop bottomPad: number = 72;
   @StorageProp(SessionStore.KEY_AGENT_ID) currentAgentId: string = '';
+  @StorageProp(SessionStore.KEY_ROLE) role: string = '';
   @StorageLink(SessionStore.KEY_AGENTS_DIRTY) @Watch('onDirtyChanged') agentsDirty: boolean = false;
   @State agents: Array<AgentModel> = [];
   @State loading: boolean = false;
@@ -50,7 +86,11 @@ export struct ExpertListPage {
     this.loading = true;
     this.errorMsg = '';
     try {
-      this.agents = await AgentService.listMine();
+      if (this.filterIndex === 3) {
+        this.agents = await AgentService.listAll();
+      } else {
+        this.agents = await AgentService.listMine();
+      }
       if (this.currentAgentId === '' && this.agents.length > 0) {
         SessionStore.setCurrentAgent(this.agents[0]);
       }
@@ -86,11 +126,15 @@ export struct ExpertListPage {
   }
 
   private filterOptions(): Array<ExpertFilterOption> {
-    return [
+    const options: Array<ExpertFilterOption> = [
       new ExpertFilterOption('全部', 0),
       new ExpertFilterOption('运行中', 1),
       new ExpertFilterOption('未运行', 2)
     ];
+    if (this.role === 'admin') {
+      options.push(new ExpertFilterOption('全部用户', 3));
+    }
+    return options;
   }
 
   /** 卡片内「开始对话」：切换专家 → 新对话 → 跳聊天 Tab */
@@ -186,7 +230,10 @@ export struct ExpertListPage {
       .backgroundColor(option.value === this.filterIndex ?
         $r('app.color.brand_light') : $r('app.color.bg_input'))
       .onClick((): void => {
-        this.filterIndex = option.value;
+        if (this.filterIndex !== option.value) {
+          this.filterIndex = option.value;
+          this.load();
+        }
       })
   }
 
@@ -194,11 +241,7 @@ export struct ExpertListPage {
   agentCard(agent: AgentModel) {
     Column({ space: 10 }) {
       Row({ space: 12 }) {
-        Image($r('app.media.octop_logo'))
-          .width(42)
-          .height(42)
-          .borderRadius(21)
-          .backgroundColor($r('app.color.brand_light'))
+        AgentAvatar({ agentId: agent.agentId, iconUrl: agent.iconUrl })
         Column({ space: 4 }) {
           Row({ space: 6 }) {
             Text(agent.name)
@@ -207,6 +250,14 @@ export struct ExpertListPage {
               .fontColor($r('app.color.text_primary'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
+            if (agent.kind === 'team') {
+              Text('团队')
+                .fontSize(10)
+                .fontColor($r('app.color.brand'))
+                .backgroundColor($r('app.color.brand_light'))
+                .borderRadius(5)
+                .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            }
             if (agent.personaMbti !== '') {
               Text(agent.personaMbti)
                 .fontSize(10)
@@ -336,6 +387,21 @@ export struct ExpertListPage {
         .alignItems(HorizontalAlign.Start)
 
         Blank()
+
+        Button({ type: ButtonType.Normal, stateEffect: true }) {
+          Text('团队')
+            .fontSize(13)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.icon_secondary'))
+        }
+        .height(38)
+        .borderRadius(19)
+        .backgroundColor($r('app.color.bg_card'))
+        .systemMaterial(UiMaterialKit.button())
+        .padding({ left: 16, right: 16 })
+        .onClick((): void => {
+          this.navStack.pushPath(new NavPathInfo('teams', null));
+        })
 
         Button({ type: ButtonType.Circle, stateEffect: true }) {
           SymbolGlyph(this.searching ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))

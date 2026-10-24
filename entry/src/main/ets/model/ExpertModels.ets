@@ -18,9 +18,11 @@ export class BuiltinExpertModel {
   readonly iconUrl: string;
   readonly color: string;
   readonly quickPrompts: Array<string>;
+  readonly taskExamples: Array<string>;
 
   constructor(id: string, label: string, description: string, welcomeMessage: string,
-    iconName: string, iconUrl: string, color: string, quickPrompts: Array<string>) {
+    iconName: string, iconUrl: string, color: string, quickPrompts: Array<string>,
+    taskExamples: Array<string>) {
     this.id = id;
     this.label = label === '' ? '专家模板' : label;
     this.description = description;
@@ -29,6 +31,7 @@ export class BuiltinExpertModel {
     this.iconUrl = iconUrl;
     this.color = color;
     this.quickPrompts = quickPrompts;
+    this.taskExamples = taskExamples;
   }
 
   static fromRecord(rec: Record<string, Object>): BuiltinExpertModel {
@@ -40,7 +43,8 @@ export class BuiltinExpertModel {
       JsonHelper.getString(rec, 'icon_name', ''),
       JsonHelper.getString(rec, 'icon_url', ''),
       JsonHelper.getString(rec, 'color', ''),
-      ExpertJsonHelper.localizedStringArray(rec, 'quick_prompts')
+      ExpertJsonHelper.localizedStringArray(rec, 'quick_prompts'),
+      ExpertJsonHelper.localizedStringArray(rec, 'task_examples')
     );
   }
 
@@ -152,6 +156,156 @@ export class WelcomeCardModel {
       ExpertJsonHelper.localizedString(rec, 'welcome_message'),
       ExpertJsonHelper.localizedStringArray(rec, 'quick_prompts')
     );
+  }
+}
+
+/** 用户发布的私有专家模板（GET /api/experts/published 列表项） */
+export class PublishedExpertModel {
+  readonly id: string;
+  readonly label: string;
+  readonly description: string;
+  readonly iconName: string;
+  readonly iconUrl: string;
+  readonly color: string;
+  readonly welcomeMessage: string;
+  readonly quickPrompts: Array<string>;
+  readonly ownerUsername: string;
+
+  constructor(id: string, label: string, description: string, iconName: string,
+    iconUrl: string, color: string, welcomeMessage: string, quickPrompts: Array<string>,
+    ownerUsername: string) {
+    this.id = id;
+    this.label = label === '' ? '已发布专家' : label;
+    this.description = description;
+    this.iconName = iconName;
+    this.iconUrl = iconUrl;
+    this.color = color;
+    this.welcomeMessage = welcomeMessage;
+    this.quickPrompts = quickPrompts;
+    this.ownerUsername = ownerUsername;
+  }
+
+  static fromRecord(rec: Record<string, Object>): PublishedExpertModel {
+    let label: string = ExpertJsonHelper.localizedString(rec, 'label');
+    if (label === '') {
+      label = JsonHelper.getString(rec, 'name', '');
+    }
+    return new PublishedExpertModel(
+      JsonHelper.getString(rec, 'id', ''),
+      label,
+      ExpertJsonHelper.localizedString(rec, 'description'),
+      JsonHelper.getString(rec, 'icon_name', ''),
+      JsonHelper.getString(rec, 'icon_url', ''),
+      JsonHelper.getString(rec, 'color', ''),
+      ExpertJsonHelper.localizedString(rec, 'welcome_message'),
+      ExpertJsonHelper.localizedStringArray(rec, 'quick_prompts'),
+      JsonHelper.getString(rec, 'owner_username', '')
+    );
+  }
+
+  static parseList(text: string): Array<PublishedExpertModel> {
+    const result: Array<PublishedExpertModel> = [];
+    const arr = JsonHelper.parseArray(text);
+    if (arr !== null) {
+      for (const rec of arr) {
+        result.push(PublishedExpertModel.fromRecord(rec));
+      }
+      return result;
+    }
+    const obj = JsonHelper.parse(text);
+    const itemRecs: Array<Record<string, Object>> = JsonHelper.getRecordArray(obj, 'experts');
+    for (const rec of itemRecs) {
+      result.push(PublishedExpertModel.fromRecord(rec));
+    }
+    const publishedRecs: Array<Record<string, Object>> = JsonHelper.getRecordArray(obj, 'published');
+    for (const rec of publishedRecs) {
+      result.push(PublishedExpertModel.fromRecord(rec));
+    }
+    return result;
+  }
+}
+
+/** 模板/市场详情中的文件内容（{name, content}） */
+export class NameContentModel {
+  readonly name: string;
+  readonly content: string;
+
+  constructor(name: string, content: string) {
+    this.name = name;
+    this.content = content;
+  }
+}
+
+/** 专家模板详情（GET /api/experts/{id} / GET /api/experts/hub/{slug}） */
+export class ExpertDetailModel {
+  readonly label: string;
+  readonly description: string;
+  readonly welcomeMessage: string;
+  readonly quickPrompts: Array<string>;
+  readonly taskExamples: Array<string>;
+  readonly fileContents: Array<NameContentModel>;
+
+  constructor(label: string, description: string, welcomeMessage: string,
+    quickPrompts: Array<string>, taskExamples: Array<string>,
+    fileContents: Array<NameContentModel>) {
+    this.label = label === '' ? '专家模板' : label;
+    this.description = description;
+    this.welcomeMessage = welcomeMessage;
+    this.quickPrompts = quickPrompts;
+    this.taskExamples = taskExamples;
+    this.fileContents = fileContents;
+  }
+
+  static parse(text: string): ExpertDetailModel {
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      throw new OctopApiError('专家详情响应格式错误', 0, 'BAD_RESPONSE');
+    }
+    let label: string = ExpertJsonHelper.localizedString(rec, 'label');
+    if (label === '') {
+      label = JsonHelper.getString(rec, 'name', '');
+    }
+    return new ExpertDetailModel(
+      label,
+      ExpertJsonHelper.localizedString(rec, 'description'),
+      ExpertJsonHelper.localizedString(rec, 'welcome_message'),
+      ExpertJsonHelper.localizedStringArray(rec, 'quick_prompts'),
+      ExpertJsonHelper.localizedStringArray(rec, 'task_examples'),
+      ExpertDetailModel.parseFileContents(rec)
+    );
+  }
+
+  /** file_contents 兼容 [{name,content}] 与 {name: content} 两种形态 */
+  static parseFileContents(rec: Record<string, Object>): Array<NameContentModel> {
+    const result: Array<NameContentModel> = [];
+    const value: Object | undefined = rec['file_contents'];
+    if (value === undefined || value === null) {
+      return result;
+    }
+    if (Array.isArray(value)) {
+      const arr: Object[] = value as Object[];
+      for (let i = 0; i < arr.length; i++) {
+        const itemRec: Record<string, Object> | null = JsonHelper.toRecord(arr[i]);
+        if (itemRec !== null) {
+          result.push(new NameContentModel(
+            JsonHelper.getString(itemRec, 'name', ''),
+            JsonHelper.getString(itemRec, 'content', '')
+          ));
+        }
+      }
+      return result;
+    }
+    const mapRec: Record<string, Object> | null = JsonHelper.toRecord(value);
+    if (mapRec !== null) {
+      const names: Array<string> = Object.keys(mapRec);
+      for (const name of names) {
+        const content: Object | undefined = mapRec[name];
+        if (typeof content === 'string') {
+          result.push(new NameContentModel(name, content));
+        }
+      }
+    }
+    return result;
   }
 }
 

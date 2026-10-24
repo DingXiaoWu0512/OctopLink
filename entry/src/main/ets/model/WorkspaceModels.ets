@@ -1,4 +1,5 @@
 import { JsonHelper } from '../utils/JsonHelper';
+import { OctopApiError } from '../net/HttpClient';
 
 /**
  * 工作台数据模型（契约见 docs/api-contract-workspace.md）：
@@ -780,6 +781,125 @@ export class ProviderModel {
     const items = JsonHelper.getRecordArray(obj, 'providers');
     for (const rec of items) {
       result.push(ProviderModel.fromRecord(rec));
+    }
+    return result;
+  }
+}
+
+/** 团队成员（team_payload.members 元素） */
+export class TeamMemberModel {
+  readonly agentId: string;
+  readonly name: string;
+  readonly color: string;
+  readonly iconName: string;
+  readonly iconUrl: string;
+  readonly state: string;
+  readonly isShared: boolean;
+
+  constructor(agentId: string, name: string, color: string, iconName: string,
+    iconUrl: string, state: string, isShared: boolean) {
+    this.agentId = agentId;
+    this.name = name === '' ? '成员' : name;
+    this.color = color;
+    this.iconName = iconName;
+    this.iconUrl = iconUrl;
+    this.state = state;
+    this.isShared = isShared;
+  }
+
+  static fromRecord(rec: Record<string, Object>): TeamMemberModel {
+    return new TeamMemberModel(
+      JsonHelper.getString(rec, 'agent_id', ''),
+      JsonHelper.getString(rec, 'name', ''),
+      JsonHelper.getString(rec, 'color', ''),
+      JsonHelper.getString(rec, 'icon_name', ''),
+      JsonHelper.getString(rec, 'icon_url', ''),
+      JsonHelper.getString(rec, 'state', ''),
+      JsonHelper.getBool(rec, 'is_shared', false)
+    );
+  }
+}
+
+/** 专家团队（GET /api/teams team_payload） */
+export class TeamModel {
+  readonly teamId: string;
+  readonly name: string;
+  readonly description: string;
+  readonly defaultModel: string;
+  readonly color: string;
+  readonly welcomeMessage: string;
+  readonly state: string;
+  readonly memberIds: Array<string>;
+  readonly members: Array<TeamMemberModel>;
+
+  constructor(teamId: string, name: string, description: string, defaultModel: string,
+    color: string, welcomeMessage: string, state: string, memberIds: Array<string>,
+    members: Array<TeamMemberModel>) {
+    this.teamId = teamId;
+    this.name = name === '' ? '团队' : name;
+    this.description = description;
+    this.defaultModel = defaultModel;
+    this.color = color;
+    this.welcomeMessage = welcomeMessage;
+    this.state = state;
+    this.memberIds = memberIds;
+    this.members = members;
+  }
+
+  static fromRecord(rec: Record<string, Object>): TeamModel {
+    const members: Array<TeamMemberModel> = [];
+    const memberRecs: Array<Record<string, Object>> = JsonHelper.getRecordArray(rec, 'members');
+    for (const memberRec of memberRecs) {
+      members.push(TeamMemberModel.fromRecord(memberRec));
+    }
+    return new TeamModel(
+      JsonHelper.getString(rec, 'team_id', ''),
+      JsonHelper.getString(rec, 'name', ''),
+      JsonHelper.getString(rec, 'description', ''),
+      JsonHelper.getString(rec, 'default_model', ''),
+      JsonHelper.getString(rec, 'color', ''),
+      JsonHelper.getString(rec, 'welcome_message', ''),
+      JsonHelper.getString(rec, 'state', ''),
+      JsonHelper.getStringArray(rec, 'member_ids'),
+      members
+    );
+  }
+
+  /** 成员名串（最多 4 个） */
+  memberNames(): string {
+    const names: Array<string> = [];
+    const limit: number = this.members.length > 4 ? 4 : this.members.length;
+    for (let i = 0; i < limit; i++) {
+      names.push(this.members[i].name);
+    }
+    let joined: string = names.join('、');
+    if (this.members.length > 4) {
+      joined += ` 等 ${this.members.length} 位`;
+    }
+    return joined;
+  }
+
+  static parseOne(text: string): TeamModel {
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      throw new OctopApiError('团队信息响应格式错误', 0, 'BAD_RESPONSE');
+    }
+    return TeamModel.fromRecord(rec);
+  }
+
+  static parseList(text: string): Array<TeamModel> {
+    const result: Array<TeamModel> = [];
+    const arr = JsonHelper.parseArray(text);
+    if (arr !== null) {
+      for (const rec of arr) {
+        result.push(TeamModel.fromRecord(rec));
+      }
+      return result;
+    }
+    const obj = JsonHelper.parse(text);
+    const items = JsonHelper.getRecordArray(obj, 'teams');
+    for (const rec of items) {
+      result.push(TeamModel.fromRecord(rec));
     }
     return result;
   }

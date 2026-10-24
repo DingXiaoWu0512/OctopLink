@@ -2,6 +2,7 @@ import { LoginPage } from './LoginPage';
 import { MainPage } from './MainPage';
 import { ExpertCreatePage } from './expert/ExpertCreatePage';
 import { AgentEditPage } from './expert/AgentEditPage';
+import { TeamsPage } from './expert/TeamsPage';
 import { CronPage } from './workspace/CronPage';
 import { KnowledgePage } from './workspace/KnowledgePage';
 import { KnowledgeDocsPage } from './workspace/KnowledgeDocsPage';
@@ -31,6 +32,8 @@ struct Index {
       ExpertCreatePage()
     } else if (name === 'agentEdit') {
       AgentEditPage()
+    } else if (name === 'teams') {
+      TeamsPage()
     } else if (name === 'cron') {
       CronPage()
     } else if (name === 'knowledge') {

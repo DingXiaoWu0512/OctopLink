@@ -14,7 +14,8 @@ import {
   MbtiTypeModel,
   MobileCapability,
   QrPollResult,
-  QrSessionModel
+  QrSessionModel,
+  TeamModel
 } from '../model/WorkspaceModels';
 import { JsonHelper } from '../utils/JsonHelper';
 
@@ -451,6 +452,37 @@ export class OAuthStartResult {
       JsonHelper.getString(rec, 'authorize_url', ''),
       JsonHelper.getString(rec, 'state_id', '')
     );
+  }
+}
+
+/** 专家团队（/api/teams，owner-only） */
+export class TeamService {
+  static async list(): Promise<Array<TeamModel>> {
+    const text: string = await HttpClient.getInstance().get('/api/teams');
+    return TeamModel.parseList(text);
+  }
+
+  /** 创建：{name, description?, default_model?, color?, icon_name?, icon_url?, welcome_message?, member_ids, config?} */
+  static async create(bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().post('/api/teams', bodyStr);
+  }
+
+  static async get(teamId: string): Promise<TeamModel> {
+    const text: string = await HttpClient.getInstance().get(`/api/teams/${teamId}`);
+    return TeamModel.parseOne(text);
+  }
+
+  static async patch(teamId: string, bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().patch(`/api/teams/${teamId}`, bodyStr);
+  }
+
+  static async remove(teamId: string): Promise<void> {
+    await HttpClient.getInstance().delete(`/api/teams/${teamId}`);
+  }
+
+  /** 默认团队模板文件预览：[{name, content}] */
+  static async template(): Promise<string> {
+    return await HttpClient.getInstance().get('/api/teams/template');
   }
 }
 

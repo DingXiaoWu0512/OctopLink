@@ -3,7 +3,8 @@ import { AgentService } from '../../service/AgentService';
 import { OctopApiError } from '../../net/HttpClient';
 import { SessionStore } from '../../store/SessionStore';
 import { ErrorRetry } from '../../components/ErrorRetry';
-import { Log } from '../../utils/Logger';
+import { ModelPickerSheet } from '../../components/ModelPickerSheet';
+import { fileIo, picker } from '@kit.CoreFileKit';
 import { PageHeader } from '../../components/PageHeader';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
 
@@ -13,6 +14,42 @@ export class AgentEditNavParam {
 
   constructor(agentId: string) {
     this.agentId = agentId;
+  }
+}
+
+/** 编辑页头像：url 带版本号，上传/删除后可强制刷新 */
+@Component
+struct EditAgentAvatar {
+  @Prop agentId: string = '';
+  @Prop iconUrl: string = '';
+  @Prop rev: number = 0;
+  @State failed: boolean = false;
+
+  private src(): string {
+    if (this.iconUrl !== '') {
+      return AgentService.assetUrl(this.iconUrl);
+    }
+    return `${AgentService.avatarUrl(this.agentId)}&v=${this.rev}`;
+  }
+
+  build() {
+    if (this.failed) {
+      Image($r('app.media.octop_logo'))
+        .width(72)
+        .height(72)
+        .borderRadius(36)
+        .backgroundColor($r('app.color.brand_light'))
+    } else {
+      Image(this.src())
+        .width(72)
+        .height(72)
+        .borderRadius(36)
+        .backgroundColor($r('app.color.brand_light'))
+        .objectFit(ImageFit.Cover)
+        .onError((event: ImageError): void => {
+          this.failed = true;
+        })
+    }
   }
 }
 
@@ -30,6 +67,9 @@ export struct AgentEditPage {
   @State systemPromptText: string = '';
   @State sharedOn: boolean = false;
   @State agentState: string = '';
+  @State iconUrl: string = '';
+  @State avatarRev: number = 0;
+  @State modelSheetOpen: boolean = false;
   private pathStack: NavPathStack | null = null;
   private agentId: string = '';
   private agentName: string = '';
@@ -59,6 +99,8 @@ export struct AgentEditPage {
       this.systemPromptText = agent.systemPrompt;
       this.sharedOn = agent.isShared;
       this.agentState = agent.state;
+      this.iconUrl = agent.iconUrl;
+      this.avatarRev += 1;
     } catch (e) {
       this.loadError = e instanceof OctopApiError ? e.message : '专家信息加载失败';
     } finally {
@@ -100,6 +142,87 @@ export struct AgentEditPage {
     }
   }
 
+  // ---- 头像 ----
+
+  private showAvatarMenu(): void {
+    this.getUIContext().showActionSheet({
+      title: '头像',
+      message: '选择头像操作',
+      sheets: [
+        {
+          title: '上传头像',
+          action: (): void => {
+            this.pickAndUploadAvatar();
+          }
+        },
+        {
+          title: '删除头像',
+          action: (): void => {
+            this.deleteAvatar();
+          }
+        }
+      ]
+    });
+  }
+
+  private async pickAndUploadAvatar(): Promise<void> {
+    const docPicker = new picker.DocumentViewPicker();
+    const options = new picker.DocumentSelectOptions();
+    options.maxSelectNumber = 1;
+    let uris: Array<string> = [];
+    try {
+      uris = await docPicker.select(options);
+    } catch (e) {
+      return;
+    }
+    if (uris.length === 0) {
+      return;
+    }
+    const uri: string = uris[0];
+    const idx: number = uri.lastIndexOf('/');
+    const fileName: string = idx >= 0 ? uri.substring(idx + 1) : 'avatar.png';
+    try {
+      const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+      let data: ArrayBuffer;
+      try {
+        const stat = fileIo.statSync(file.fd);
+        data = new ArrayBuffer(stat.size);
+        fileIo.readSync(file.fd, data);
+      } finally {
+        fileIo.closeSync(file);
+      }
+      await AgentService.uploadAvatar(this.agentId, fileName, 'application/octet-stream', data);
+      this.iconUrl = '';
+      this.avatarRev += 1;
+      SessionStore.markAgentsDirty();
+      this.getUIContext().getPromptAction().showToast({ message: '头像已更新' });
+    } catch (e) {
+      const message: string = e instanceof OctopApiError ? e.message : '头像上传失败';
+      this.getUIContext().getPromptAction().showToast({ message });
+    }
+  }
+
+  private async deleteAvatar(): Promise<void> {
+    if (this.operating) {
+      return;
+    }
+    this.operating = true;
+    try {
+      await AgentService.deleteAvatar(this.agentId);
+      this.iconUrl = '';
+      this.avatarRev += 1;
+      SessionStore.markAgentsDirty();
+      this.getUIContext().getPromptAction().showToast({ message: '头像已删除' });
+    } catch (e) {
+      const message: string = e instanceof OctopApiError ? e.message : '删除失败';
+      this.getUIContext().getPromptAction().showToast({ message });
+    } finally {
+      this.operating = false;
+    }
+  }
+
+  // ---- 运行控制 ----
+
   private async toggleRunning(start: boolean): Promise<void> {
     if (this.operating) {
       return;
@@ -121,6 +244,46 @@ export struct AgentEditPage {
     } finally {
       this.operating = false;
     }
+  }
+
+  private async reloadAgent(): Promise<void> {
+    if (this.operating) {
+      return;
+    }
+    this.operating = true;
+    try {
+      await AgentService.reload(this.agentId);
+      SessionStore.markAgentsDirty();
+      this.getUIContext().getPromptAction().showToast({ message: '已重载' });
+    } catch (e) {
+      const message: string = e instanceof OctopApiError ? e.message : '重载失败';
+      this.getUIContext().getPromptAction().showToast({ message });
+    } finally {
+      this.operating = false;
+    }
+  }
+
+  private async showStatus(): Promise<void> {
+    if (this.operating) {
+      return;
+    }
+    this.operating = true;
+    try {
+      const raw: string = await AgentService.getStatus(this.agentId);
+      this.getUIContext().showAlertDialog({
+        title: '运行状态',
+        message: raw === '' ? '（无状态信息）' : raw,
+        confirm: {
+          value: $r('app.string.common_confirm'),
+          action: (): void => {
+          }
+        }
+      });
+    } catch (e) {
+      const message: string = e instanceof OctopApiError ? e.message : '状态获取失败';
+      this.getUIContext().getPromptAction().showToast({ message });
+    }
+    this.operating = false;
   }
 
   private confirmDelete(): void {
@@ -195,6 +358,37 @@ export struct AgentEditPage {
         } else {
           Scroll() {
             Column({ space: 12 }) {
+              // 头像与名称
+              Row({ space: 14 }) {
+                EditAgentAvatar({
+                  agentId: this.agentId,
+                  iconUrl: this.iconUrl,
+                  rev: this.avatarRev
+                })
+                  .onClick((): void => {
+                    this.showAvatarMenu();
+                  })
+                Column({ space: 4 }) {
+                  Text(this.agentName)
+                    .fontSize(17)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor($r('app.color.text_primary'))
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  Text('点击头像上传或删除')
+                    .fontSize(12)
+                    .fontColor($r('app.color.text_tertiary'))
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Start)
+              }
+              .width('100%')
+              .padding(16)
+              .borderRadius(16)
+              .backgroundColor($r('app.color.bg_card'))
+              .border({ width: 1, color: $r('app.color.card_stroke') })
+              .shadow({ radius: 10, color: '#0A000000', offsetY: 3 })
+
               // 运行状态卡片
               Column({ space: 0 }) {
                 Row() {
@@ -217,13 +411,13 @@ export struct AgentEditPage {
                 }
                 .width('100%')
                 .padding({ left: 16, right: 16, top: 14, bottom: 14 })
-                Row({ space: 12 }) {
+                Row({ space: 10 }) {
                   Button('启动')
-                    .fontSize(14)
+                    .fontSize(13)
                     .fontWeight(FontWeight.Bold)
-                    .height(38)
+                    .height(36)
                     .layoutWeight(1)
-                    .borderRadius(19)
+                    .borderRadius(18)
                     .backgroundColor($r('app.color.brand_light'))
                     .fontColor($r('app.color.brand'))
                     .systemMaterial(UiMaterialKit.button())
@@ -232,17 +426,43 @@ export struct AgentEditPage {
                       this.toggleRunning(true);
                     })
                   Button('停止')
-                    .fontSize(14)
+                    .fontSize(13)
                     .fontWeight(FontWeight.Bold)
-                    .height(38)
+                    .height(36)
                     .layoutWeight(1)
-                    .borderRadius(19)
+                    .borderRadius(18)
                     .backgroundColor($r('app.color.bg_input'))
                     .fontColor($r('app.color.text_secondary'))
                     .systemMaterial(UiMaterialKit.button())
                     .enabled(!this.operating)
                     .onClick((): void => {
                       this.toggleRunning(false);
+                    })
+                  Button('重载')
+                    .fontSize(13)
+                    .fontWeight(FontWeight.Bold)
+                    .height(36)
+                    .layoutWeight(1)
+                    .borderRadius(18)
+                    .backgroundColor($r('app.color.bg_input'))
+                    .fontColor($r('app.color.text_secondary'))
+                    .systemMaterial(UiMaterialKit.button())
+                    .enabled(!this.operating)
+                    .onClick((): void => {
+                      this.reloadAgent();
+                    })
+                  Button('状态')
+                    .fontSize(13)
+                    .fontWeight(FontWeight.Bold)
+                    .height(36)
+                    .layoutWeight(1)
+                    .borderRadius(18)
+                    .backgroundColor($r('app.color.bg_input'))
+                    .fontColor($r('app.color.text_secondary'))
+                    .systemMaterial(UiMaterialKit.button())
+                    .enabled(!this.operating)
+                    .onClick((): void => {
+                      this.showStatus();
                     })
                 }
                 .width('100%')
@@ -311,14 +531,25 @@ export struct AgentEditPage {
                   Text('默认模型')
                     .fontSize(13)
                     .fontColor($r('app.color.text_secondary'))
-                  TextInput({ text: this.modelText, placeholder: '如 openai/gpt-4o' })
-                    .fontSize(14)
-                    .height(42)
-                    .backgroundColor($r('app.color.bg_input'))
-                    .borderRadius(12)
-                    .onChange((value: string): void => {
-                      this.modelText = value;
-                    })
+                  Row({ space: 8 }) {
+                    Text(this.modelText === '' ? '自动（未指定）' : this.modelText)
+                      .fontSize(14)
+                      .fontColor(this.modelText === '' ? $r('app.color.text_tertiary') : $r('app.color.text_primary'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .layoutWeight(1)
+                    SymbolGlyph($r('sys.symbol.chevron_right'))
+                      .fontSize(14)
+                      .fontColor([$r('app.color.text_tertiary')])
+                  }
+                  .width('100%')
+                  .height(42)
+                  .padding({ left: 12, right: 12 })
+                  .backgroundColor($r('app.color.bg_input'))
+                  .borderRadius(12)
+                  .onClick((): void => {
+                    this.modelSheetOpen = true;
+                  })
                 }
                 .width('100%')
                 .alignItems(HorizontalAlign.Start)
@@ -418,6 +649,10 @@ export struct AgentEditPage {
           .layoutWeight(1)
           .width('100%')
           .scrollBar(BarState.Off)
+          .bindSheet($$this.modelSheetOpen, this.modelSheetBuilder, {
+            detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+            showClose: true
+          })
         }
       }
       .width('100%')
@@ -427,6 +662,17 @@ export struct AgentEditPage {
     .backgroundColor($r('app.color.bg_page'))
     .onReady((ctx: NavDestinationContext): void => {
       this.onNavReady(ctx);
+    })
+  }
+
+  @Builder
+  private modelSheetBuilder() {
+    ModelPickerSheet({
+      allowAuto: true,
+      onPick: (ref: string, label: string): void => {
+        this.modelText = ref;
+        this.modelSheetOpen = false;
+      }
     })
   }
 }
