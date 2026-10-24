@@ -1,0 +1,74 @@
+import { HttpClient } from '../net/HttpClient';
+import { JsonHelper } from '../utils/JsonHelper';
+import { ChatMessageModel } from '../model/MessageModels';
+import { ContextUsageModel, CreateThreadResult, HistoryResult, ThreadModel } from '../model/ThreadModels';
+import { HitlRequestModel } from '../model/HitlModels';
+
+export class ThreadService {
+  static async list(agentId: string, limit: number): Promise<Array<ThreadModel>> {
+    const text: string = await HttpClient.getInstance().get(`/api/agents/${agentId}/threads?limit=${limit}`);
+    return ThreadModel.parseList(text);
+  }
+
+  static async create(agentId: string): Promise<CreateThreadResult> {
+    const text: string = await HttpClient.getInstance().post(`/api/agents/${agentId}/threads`, '{}');
+    return CreateThreadResult.fromResponse(text);
+  }
+
+  static async history(agentId: string, threadId: string): Promise<Array<ChatMessageModel>> {
+    const text: string =
+      await HttpClient.getInstance().get(`/api/agents/${agentId}/threads/${threadId}/history?limit=200`);
+    return ChatMessageModel.parseHistory(text);
+  }
+
+  /** 历史加载（含待审批卡 hitl_pending 解析） */
+  static async historyFull(agentId: string, threadId: string): Promise<HistoryResult> {
+    const text: string =
+      await HttpClient.getInstance().get(`/api/agents/${agentId}/threads/${threadId}/history?limit=200`);
+    const messages: Array<ChatMessageModel> = ChatMessageModel.parseHistory(text);
+    const rec = JsonHelper.parse(text);
+    let hitlPending: HitlRequestModel | null = null;
+    if (rec !== null) {
+      const pendingRec: Record<string, Object> | null = JsonHelper.getRecord(rec, 'hitl_pending');
+      hitlPending = HitlRequestModel.fromFrameRecord(pendingRec);
+    }
+    return new HistoryResult(messages, hitlPending);
+  }
+
+  static async rename(agentId: string, threadId: string, title: string): Promise<void> {
+    const body: Record<string, Object> = { 'title': title };
+    await HttpClient.getInstance().patch(`/api/agents/${agentId}/threads/${threadId}`, JSON.stringify(body));
+  }
+
+  /** 置顶/取消置顶会话 */
+  static async setPinned(agentId: string, threadId: string, pinned: boolean): Promise<void> {
+    const body: Record<string, Object> = { 'pinned': pinned };
+    await HttpClient.getInstance().patch(`/api/agents/${agentId}/threads/${threadId}`, JSON.stringify(body));
+  }
+
+  static async remove(agentId: string, threadId: string): Promise<void> {
+    await HttpClient.getInstance().delete(`/api/agents/${agentId}/threads/${threadId}`);
+  }
+
+  /** 清除线程未读（204），成功后 agent unread_count 归零 */
+  static async markRead(agentId: string, threadId: string): Promise<void> {
+    await HttpClient.getInstance().post(`/api/agents/${agentId}/threads/${threadId}/read`, '{}');
+  }
+
+  /** 从最后一条 assistant 消息分叉新会话，返回新 thread_id（失败返回空串） */
+  static async forkFromLast(agentId: string, threadId: string): Promise<string> {
+    const body: Record<string, Object> = { 'assistant_turns_from_end': 1 };
+    const text: string =
+      await HttpClient.getInstance().post(`/api/agents/${agentId}/threads/${threadId}/fork`,
+        JSON.stringify(body));
+    const rec = JsonHelper.parse(text);
+    return rec === null ? '' : JsonHelper.getString(rec, 'thread_id', '');
+  }
+
+  /** 上下文窗口用量 */
+  static async contextUsage(agentId: string, threadId: string): Promise<ContextUsageModel> {
+    const text: string =
+      await HttpClient.getInstance().get(`/api/agents/${agentId}/threads/${threadId}/context-usage`);
+    return ContextUsageModel.parse(text);
+  }
+}

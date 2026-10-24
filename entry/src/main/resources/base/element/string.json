@@ -1,0 +1,192 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Octop Link 主模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Octop Link - 连接你的 Octop 智能体"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Octop Link"
+    },
+    {
+      "name": "app_slogan",
+      "value": "连接你的 Octop 智能体"
+    },
+    {
+      "name": "login_title",
+      "value": "登录 Octop Link"
+    },
+    {
+      "name": "login_server_url",
+      "value": "服务器地址"
+    },
+    {
+      "name": "login_server_url_placeholder",
+      "value": "例如 http://192.168.3.2:8088"
+    },
+    {
+      "name": "login_username",
+      "value": "用户名"
+    },
+    {
+      "name": "login_username_placeholder",
+      "value": "请输入用户名"
+    },
+    {
+      "name": "login_password",
+      "value": "密码"
+    },
+    {
+      "name": "login_password_placeholder",
+      "value": "请输入密码"
+    },
+    {
+      "name": "login_button",
+      "value": "登 录"
+    },
+    {
+      "name": "login_loading",
+      "value": "正在登录..."
+    },
+    {
+      "name": "login_error_network",
+      "value": "无法连接服务器，请检查地址与网络"
+    },
+    {
+      "name": "login_error_credentials",
+      "value": "用户名或密码错误"
+    },
+    {
+      "name": "tab_chat",
+      "value": "聊天"
+    },
+    {
+      "name": "tab_sessions",
+      "value": "会话"
+    },
+    {
+      "name": "tab_expert",
+      "value": "专家"
+    },
+    {
+      "name": "tab_workspace",
+      "value": "工作台"
+    },
+    {
+      "name": "tab_me",
+      "value": "我的"
+    },
+    {
+      "name": "chat_new",
+      "value": "新对话"
+    },
+    {
+      "name": "chat_empty_title",
+      "value": "还没有对话"
+    },
+    {
+      "name": "chat_empty_subtitle",
+      "value": "点击下方按钮，开始与智能体交流"
+    },
+    {
+      "name": "chat_input_placeholder",
+      "value": "输入消息..."
+    },
+    {
+      "name": "chat_send",
+      "value": "发送"
+    },
+    {
+      "name": "chat_stop",
+      "value": "停止"
+    },
+    {
+      "name": "chat_thinking",
+      "value": "正在思考..."
+    },
+    {
+      "name": "chat_replying",
+      "value": "正在回复..."
+    },
+    {
+      "name": "chat_load_history_failed",
+      "value": "历史消息加载失败"
+    },
+    {
+      "name": "chat_retry",
+      "value": "重试"
+    },
+    {
+      "name": "chat_default_title",
+      "value": "新对话"
+    },
+    {
+      "name": "expert_title",
+      "value": "专家"
+    },
+    {
+      "name": "expert_current",
+      "value": "当前使用"
+    },
+    {
+      "name": "expert_empty",
+      "value": "暂无可用专家"
+    },
+    {
+      "name": "expert_load_failed",
+      "value": "专家列表加载失败"
+    },
+    {
+      "name": "workspace_title",
+      "value": "工作台"
+    },
+    {
+      "name": "workspace_coming_soon",
+      "value": "更多能力即将上线"
+    },
+    {
+      "name": "me_title",
+      "value": "我的"
+    },
+    {
+      "name": "me_server",
+      "value": "服务器"
+    },
+    {
+      "name": "me_current_agent",
+      "value": "当前专家"
+    },
+    {
+      "name": "me_logout",
+      "value": "退出登录"
+    },
+    {
+      "name": "me_logout_confirm",
+      "value": "确定要退出登录吗？"
+    },
+    {
+      "name": "common_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "common_confirm",
+      "value": "确定"
+    },
+    {
+      "name": "common_loading",
+      "value": "加载中..."
+    },
+    {
+      "name": "common_load_failed",
+      "value": "加载失败"
+    },
+    {
+      "name": "common_empty",
+      "value": "暂无内容"
+    }
+  ]
+}

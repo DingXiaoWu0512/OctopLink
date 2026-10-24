@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 2,
+  "status": "ok",
+  "producer": {
+    "tool": "recognize_ui_components",
+    "model": "Qwen3_VL_235B_A22B_Instruct",
+    "invocationId": "216fdc89-d8af-476a-bd2e-b6e99bfa0f10",
+    "createdAt": "2026-10-24T16:51:50.142Z"
+  },
+  "inputs": {
+    "image": {
+      "path": "cube_shots/cube1.jpeg",
+      "sha256": "8f297961e48451005df0fd9aac3e458ac5f5f3f992420384955143cbf8ea8b78"
+    },
+    "requirements": {
+      "text": "这是一个鸿蒙 AI 助手应用的\"助手首页\"。请详细描述：1) 整体布局结构（顶部栏、筛选、卡片网格还是列表）；2) 助手卡片的外观（尺寸、圆角、配色、图标、文字层级）；3) 顶部标题栏样式与右上角按钮；4) 底部导航栏形态（几个Tab、样式、是否悬浮）；5) 间距、留白、视觉风格（配色、是否玻璃拟态）；6) 值得学习的布局细节。",
+      "sha256": "8cef36286eceede04f6f7a6ed29fbfbf798f95404e51a383f2faa0858fd460d2"
+    }
+  },
+  "analysis": {
+    "canvas": {
+      "width": 1320,
+      "height": 2848
+    },
+    "visible_components": [
+      {
+        "id": "component-1",
+        "name": "顶部标题栏",
+        "visual_evidence": "左上角显示“助手”文字标题，右上角有两个圆形按钮，分别是搜索图标和加号图标。",
+        "component_candidates": [
+          {
+            "name": "Column",
+            "confidence": 0.9,
+            "reason": "用于构建标题栏容器，容纳标题和右侧操作按钮。"
+          },
+          {
+            "name": "Button",
+            "confidence": 0.85,
+            "reason": "用于实现搜索和添加功能的圆形图标按钮。"
+          }
+        ]
+      },
+      {
+        "id": "component-2",
+        "name": "筛选标签组",
+        "visual_evidence": "标题下方有两组横向排列的圆角矩形标签，分别是“全部、自建、内置”和“卡片、精简”。",
+        "component_candidates": [
+          {
+            "name": "Tabs",
+            "confidence": 0.8,
+            "reason": "适合实现分组切换的标签页，支持横向排列和圆角样式。"
+          },
+          {
+            "name": "Button",
+            "confidence": 0.75,
+            "reason": "可作为独立标签按钮使用，通过样式控制圆角和选中状态。"
+          }
+        ]
+      },
+      {
+        "id": "component-3",
+        "name": "助手卡片",
+        "visual_evidence": "页面主体为多个垂直排列的卡片，每个卡片包含图标、标题、副标题、描述、标签和操作按钮，左侧有蓝色竖条标识选中状态。",
+        "component_candidates": [
+          {
+            "name": "List",
+            "confidence": 0.9,
+            "reason": "用于垂直滚动的卡片列表容器。"
+          },
+          {
+            "name": "ListItem",
+            "confidence": 0.85,
+            "reason": "用于单个卡片项，支持嵌套布局和自定义内容。"
+          },
+          {
+            "name": "Column",
+            "confidence": 0.8,
+            "reason": "用于卡片内部垂直布局，组织图标、文字和按钮。"
+          },
+          {
+            "name": "Row",
+            "confidence": 0.75,
+            "reason": "用于卡片内水平排列的标签或操作按钮。"
+          }
+        ]
+      },
+      {
+        "id": "component-4",
+        "name": "底部导航栏",
+        "visual_evidence": "屏幕底部有三个带图标的标签，分别是“助手”、“对话”、“设置”，当前“助手”被选中。",
+        "component_candidates": [
+          {
+            "name": "Tabs",
+            "confidence": 0.9,
+            "reason": "标准底部导航组件，支持图标和文字标签，可高亮当前选中项。"
+          },
+          {
+            "name": "Button",
+            "confidence": 0.75,
+            "reason": "可自定义实现底部导航按钮，通过状态管理控制选中样式。"
+          }
+        ]
+      },
+      {
+        "id": "component-5",
+        "name": "卡片内操作按钮",
+        "visual_evidence": "每个助手卡片底部右侧有“开始对话”按钮，带加号图标；部分卡片有“通用对话”或“技能1”等标签。",
+        "component_candidates": [
+          {
+            "name": "Button",
+            "confidence": 0.9,
+            "reason": "用于实现“开始对话”等操作按钮，支持图标和文字组合。"
+          },
+          {
+            "name": "Text",
+            "confidence": 0.8,
+            "reason": "用于显示“通用对话”、“技能1”等标签文字。"
+          }
+        ]
+      }
+    ],
+    "global_observations": [],
+    "uncertainties": []
+  }
+}

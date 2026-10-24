@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 2,
+  "status": "ok",
+  "producer": {
+    "tool": "recognize_ui_components",
+    "model": "Qwen3_VL_235B_A22B_Instruct",
+    "invocationId": "6ffc7a91-e00e-4b48-a822-f60af4e7641b",
+    "createdAt": "2026-10-24T12:48:33.782Z"
+  },
+  "inputs": {
+    "image": {
+      "path": ".icon-src/octop_logo_src.png",
+      "sha256": "34e470d865f55b111576b0131f6a455ed7686c812cdd661cef5d51fab45285ba"
+    },
+    "requirements": {
+      "text": "这是一张用户想设为应用图标的 Octop logo 图片（201x201 不透明 PNG）。请描述：1) 图形内容（什么形象、文字）2) 背景色（纯色/渐变，什么颜色）3) 主体占比与位置（是否居中、留白多少）4) 配色方案 5) 是否适合直接作为应用图标全出血使用，还是应该抠出主体",
+      "sha256": "293787f8bfe4ded8358c58580f541a3f980406b9f30b36ca7be5119f490f529f"
+    }
+  },
+  "analysis": {
+    "canvas": {
+      "width": 201,
+      "height": 201
+    },
+    "visible_components": [
+      {
+        "id": "component-1",
+        "name": "Octop logo 图标",
+        "visual_evidence": "一个粉红色章鱼卡通形象，单眼 wink，趴在一台笔记本电脑上，电脑盖上有一个小章鱼骷髅标志",
+        "component_candidates": [
+          {
+            "name": "Image",
+            "confidence": 0.95,
+            "reason": "该图像为静态 PNG 资源，适合用 Image 组件加载显示"
+          }
+        ]
+      }
+    ],
+    "global_observations": [],
+    "uncertainties": []
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 2,
+  "status": "ok",
+  "producer": {
+    "tool": "recognize_ui_components",
+    "model": "Qwen3_VL_235B_A22B_Instruct",
+    "invocationId": "cacf3059-3e32-4f3a-835d-8ea1643a9334",
+    "createdAt": "2026-10-24T16:52:02.110Z"
+  },
+  "inputs": {
+    "image": {
+      "path": "cube_shots/cube2.jpeg",
+      "sha256": "2cfd4fc8a0436cf1b33fe0fa3aaf02733b1d86be93619b1d71fd9ae382149ce7"
+    },
+    "requirements": {
+      "text": "这是一个鸿蒙 AI 助手应用的\"对话列表页\"。请详细描述：1) 顶部栏（标题、按钮）；2) 上手清单/任务卡片样式（进度显示方式）；3) 会话列表项布局（头像、标题、时间、消息数如何排布）；4) 分组标题样式；5) 空态或引导区设计；6) 底部导航形态；7) 值得学习的布局细节。",
+      "sha256": "97a276b2174115f7aea5279ca2a32866b7bee7ce55292ac7a97e898dc24fb205"
+    }
+  },
+  "analysis": {
+    "canvas": {
+      "width": 1320,
+      "height": 2848
+    },
+    "visible_components": [
+      {
+        "id": "component-1",
+        "name": "顶部标题栏",
+        "visual_evidence": "左上角显示“默认助手”及副标题“跟随全局当前模型”，右侧有搜索图标和更多选项图标",
+        "component_candidates": [
+          {
+            "name": "Row",
+            "confidence": 0.9,
+            "reason": "用于水平排列标题与操作按钮"
+          },
+          {
+            "name": "Text",
+            "confidence": 0.95,
+            "reason": "用于显示“默认助手”和“跟随全局当前模型”"
+          },
+          {
+            "name": "Button",
+            "confidence": 0.85,
+            "reason": "用于实现搜索和更多选项图标按钮"
+          }
+        ]
+      },
+      {
+        "id": "component-2",
+        "name": "上手清单卡片",
+        "visual_evidence": "标题为“上手清单”，带绿色勾选图标，下方有进度条显示“已完成 3/8”，右侧有“继续”按钮",
+        "component_candidates": [
+          {
+            "name": "Column",
+            "confidence": 0.85,
+            "reason": "用于垂直排列标题、进度条和状态文本"
+          },
+          {
+            "name": "Progress",
+            "confidence": 0.9,
+            "reason": "用于显示已完成进度条"
+          },
+          {
+            "name": "Text",
+            "confidence": 0.9,
+            "reason": "用于显示“已完成 3/8”和“继续”"
+          },
+          {
+            "name": "Button",
+            "confidence": 0.8,
+            "reason": "用于“继续”操作按钮"
+          }
+        ]
+      },
+      {
+        "id": "component-3",
+        "name": "会话列表项",
+        "visual_evidence": "包含左侧“日”字图标、标题“日常问候”、副标题“暂无消息摘要”、右侧显示“3天前”和“6条消息”及更多操作图标",
+        "component_candidates": [
+          {
+            "name": "Row",
+            "confidence": 0.85,
+            "reason": "用于水平布局头像、标题、时间和消息数"
+          },
+          {
+            "name": "Image",
+            "confidence": 0.8,
+            "reason": "用于显示左侧“日”字图标"
+          },
+          {
+            "name": "Text",
+            "confidence": 0.9,
+            "reason": "用于显示标题、副标题、时间和消息数"
+          },
+          {
+            "name": "Button",
+            "confidence": 0.75,
+            "reason": "用于右侧更多操作图标"
+          }
+        ]
+      },
+      {
+        "id": "component-4",
+        "name": "分组标题",
+        "visual_evidence": "显示“近7天 1”，用于分隔不同时间段的会话",
+        "component_candidates": [
+          {
+            "name": "Text",
+            "confidence": 0.95,
+            "reason": "用于显示分组标题文本"
+          },
+          {
+            "name": "Divider",
+            "confidence": 0.7,
+            "reason": "可能用于视觉分隔，但截图中未明确显示分隔线"
+          }
+        ]
+      },
+      {
+        "id": "component-5",
+        "name": "底部导航栏",
+        "visual_evidence": "底部包含三个图标按钮：“助手”、“对话”、“设置”，当前“对话”高亮",
+        "component_candidates": [
+          {
+            "name": "Tabs",
+            "confidence": 0.9,
+            "reason": "用于实现底部导航切换"
+          },
+          {
+            "name": "Button",
+            "confidence": 0.85,
+            "reason": "用于每个导航项的图标和文字"
+          },
+          {
+            "name": "Image",
+            "confidence": 0.8,
+            "reason": "用于显示导航图标"
+          }
+        ]
+      },
+      {
+        "id": "component-6",
+        "name": "浮动操作按钮",
+        "visual_evidence": "右下角圆形按钮，内含“+”对话气泡图标",
+        "component_candidates": [
+          {
+            "name": "Button",
+            "confidence": 0.9,
+            "reason": "用于触发新建对话操作"
+          },
+          {
+            "name": "Image",
+            "confidence": 0.85,
+            "reason": "用于显示“+”对话气泡图标"
+          }
+        ]
+      }
+    ],
+    "global_observations": [],
+    "uncertainties": []
+  }
+}

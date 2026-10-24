@@ -1,0 +1,128 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#000000"
+    },
+    {
+      "name": "brand",
+      "value": "#3D7FFF"
+    },
+    {
+      "name": "brand_grad_start",
+      "value": "#3D7FFF"
+    },
+    {
+      "name": "brand_grad_end",
+      "value": "#6B5BFF"
+    },
+    {
+      "name": "brand_light",
+      "value": "#1A2A44"
+    },
+    {
+      "name": "bg_page",
+      "value": "#0E0F11"
+    },
+    {
+      "name": "bg_card",
+      "value": "#1D1E20"
+    },
+    {
+      "name": "bg_input",
+      "value": "#1D1E20"
+    },
+    {
+      "name": "bg_bubble_user",
+      "value": "#3D7FFF"
+    },
+    {
+      "name": "bg_bubble_assistant",
+      "value": "#1D1E20"
+    },
+    {
+      "name": "text_primary",
+      "value": "#E6E6E6"
+    },
+    {
+      "name": "text_secondary",
+      "value": "#AAAAAA"
+    },
+    {
+      "name": "text_tertiary",
+      "value": "#99FFFFFF"
+    },
+    {
+      "name": "text_on_brand",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "text_bubble_user",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "divider",
+      "value": "#14FFFFFF"
+    },
+    {
+      "name": "card_stroke",
+      "value": "#14FFFFFF"
+    },
+    {
+      "name": "danger",
+      "value": "#FF6A5A"
+    },
+    {
+      "name": "danger_soft",
+      "value": "#3A211E"
+    },
+    {
+      "name": "success",
+      "value": "#4CD964"
+    },
+    {
+      "name": "success_soft",
+      "value": "#1A3324"
+    },
+    {
+      "name": "warning",
+      "value": "#FF9E5C"
+    },
+    {
+      "name": "warning_soft",
+      "value": "#3A2A1E"
+    },
+    {
+      "name": "tab_inactive",
+      "value": "#99FFFFFF"
+    },
+    {
+      "name": "icon_secondary",
+      "value": "#99FFFFFF"
+    },
+    {
+      "name": "glow_top",
+      "value": "#333D7FFF"
+    },
+    {
+      "name": "bar_glass",
+      "value": "#CC1B1D23"
+    },
+    {
+      "name": "nav_pill",
+      "value": "#333D7FFF"
+    },
+    {
+      "name": "swipe_pin",
+      "value": "#33F7A325"
+    },
+    {
+      "name": "swipe_rename",
+      "value": "#333D7FFF"
+    },
+    {
+      "name": "swipe_delete",
+      "value": "#33FA5151"
+    }
+  ]
+}

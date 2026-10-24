@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 2,
+  "status": "ok",
+  "producer": {
+    "tool": "recognize_ui_components",
+    "model": "Qwen3_VL_235B_A22B_Instruct",
+    "invocationId": "1543d7c2-64c0-441a-a289-4da270d35ca1",
+    "createdAt": "2026-10-24T16:51:54.925Z"
+  },
+  "inputs": {
+    "image": {
+      "path": "cube_shots/cube4.jpeg",
+      "sha256": "ab894fb3a0118274575b80cccb0db30b7c110aba45c3ad5349c7bfc1cc002eea"
+    },
+    "requirements": {
+      "text": "这是一个鸿蒙 AI 应用的\"设置页\"。请详细描述：1) 顶部账号卡片设计（头像、名字、版本徽章、布局大小）；2) 设置分组与列表行样式（图标、标题、副标题、箭头、分组间距）；3) 卡片圆角、背景色、阴影；4) 模型配置区如何展示；5) 值得学习的设置页布局细节。",
+      "sha256": "e26c3576447d51f7c45494c936839bf589a59018fbd1aa155220d154259b6eab"
+    }
+  },
+  "analysis": {
+    "canvas": {
+      "width": 1320,
+      "height": 2848
+    },
+    "visible_components": [
+      {
+        "id": "component-1",
+        "name": "设置页标题",
+        "visual_evidence": "顶部大号白色文字“设置”",
+        "component_candidates": [
+          {
+            "name": "Text",
+            "confidence": 0.95,
+            "reason": "用于显示静态标题文本，符合视觉呈现"
+          }
+        ]
+      },
+      {
+        "id": "component-2",
+        "name": "搜索框",
+        "visual_evidence": "标题下方带放大镜图标的输入框，提示文字“搜索设置项”",
+        "component_candidates": [
+          {
+            "name": "Search",
+            "confidence": 0.9,
+            "reason": "专用于搜索功能，包含图标与提示文本"
+          }
+        ]
+      },
+      {
+        "id": "component-3",
+        "name": "用户信息卡片",
+        "visual_evidence": "包含“CUBE”标签、“爱阿雨”用户名、“免费使用中”副标题、立方体图标、“普通版”徽章及“在线服务未连接”状态提示",
+        "component_candidates": [
+          {
+            "name": "Card",
+            "confidence": 0.85,
+            "reason": "用于封装用户信息与状态，支持圆角、背景色和内嵌组件"
+          },
+          {
+            "name": "Row",
+            "confidence": 0.8,
+            "reason": "用于水平排列头像、文字与徽章"
+          },
+          {
+            "name": "Column",
+            "confidence": 0.8,
+            "reason": "用于垂直排列用户名与副标题"
+          }
+        ]
+      },
+      {
+        "id": "component-4",
+        "name": "设置分组标题",
+        "visual_evidence": "“模型配置”、“助手与扩展”等灰色小字标题",
+        "component_candidates": [
+          {
+            "name": "Text",
+            "confidence": 0.9,
+            "reason": "用于显示分组标题，样式为小号灰色字体"
+          }
+        ]
+      },
+      {
+        "id": "component-5",
+        "name": "设置列表项",
+        "visual_evidence": "每行包含左侧图标、主标题、副标题、右侧箭头，如“服务商管理”、“默认模型”等",
+        "component_candidates": [
+          {
+            "name": "ListItem",
+            "confidence": 0.9,
+            "reason": "标准设置项组件，支持图标、主副标题、右侧导航箭头"
+          },
+          {
+            "name": "Row",
+            "confidence": 0.8,
+            "reason": "用于水平布局图标、文字与箭头"
+          }
+        ]
+      },
+      {
+        "id": "component-6",
+        "name": "底部导航栏",
+        "visual_evidence": "底部半透明圆角条，包含“助手”、“对话”、“设置”三个带图标的标签",
+        "component_candidates": [
+          {
+            "name": "Tabs",
+            "confidence": 0.85,
+            "reason": "用于底部导航，支持图标与文字标签切换"
+          },
+          {
+            "name": "Column",
+            "confidence": 0.8,
+            "reason": "用于垂直排列图标与文字"
+          }
+        ]
+      }
+    ],
+    "global_observations": [],
+    "uncertainties": []
+  }
+}
