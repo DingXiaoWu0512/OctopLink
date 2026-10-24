@@ -89,6 +89,11 @@ export class JsonHelper {
     return def;
   }
 
+  /** 取可空数字：null/缺失/类型不符时返回 def（用于 token_quota 等可空字段） */
+  static getOptionalNumber(rec: Record<string, Object> | null, key: string, def: number): number {
+    return JsonHelper.getNumber(rec, key, def);
+  }
+
   /** 取 Record 数组字段 */
   static getRecordArray(rec: Record<string, Object> | null, key: string): Array<Record<string, Object>> {
     const result: Array<Record<string, Object>> = [];

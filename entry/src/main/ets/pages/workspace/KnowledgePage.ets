@@ -7,6 +7,7 @@ import { KbCreateDialog } from '../../components/KbCreateDialog';
 import { KnowledgeDocsNavParam } from './KnowledgeDocsPage';
 import { PageHeader } from '../../components/PageHeader';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
+import { TimeFormat } from '../../utils/TimeFormat';
 
 /** 知识库列表（用户级） */
 @Component
@@ -215,6 +216,12 @@ export struct KnowledgePage {
                             Text(`@${base.ownerUsername}`)
                               .fontSize(11)
                               .fontColor($r('app.color.text_tertiary'))
+                          }
+                          if (base.createdAtMs > 0) {
+                            Text(`创建于 ${TimeFormat.list(base.createdAtMs)}`)
+                              .fontSize(11)
+                              .fontColor($r('app.color.text_tertiary'))
+                              .maxLines(1)
                           }
                         }
                         .width('100%')

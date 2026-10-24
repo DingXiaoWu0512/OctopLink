@@ -15,12 +15,6 @@ export class ThreadService {
     return CreateThreadResult.fromResponse(text);
   }
 
-  static async history(agentId: string, threadId: string): Promise<Array<ChatMessageModel>> {
-    const text: string =
-      await HttpClient.getInstance().get(`/api/agents/${agentId}/threads/${threadId}/history?limit=200`);
-    return ChatMessageModel.parseHistory(text);
-  }
-
   /** 历史加载（含待审批卡 hitl_pending 解析）；offset 向前翻页（0=最新一页） */
   static async historyFull(agentId: string, threadId: string, offset: number = 0): Promise<HistoryResult> {
     const text: string = await HttpClient.getInstance().get(

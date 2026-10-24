@@ -3,6 +3,7 @@ import { SessionStore } from '../../store/SessionStore';
 import { ChangePasswordDialog } from '../../components/ChangePasswordDialog';
 import { SettingsRow } from '../../components/SettingsRow';
 import { AuthService } from '../../service/AuthService';
+import { HttpClient } from '../../net/HttpClient';
 import { Log } from '../../utils/Logger';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
 
@@ -16,21 +17,58 @@ export struct MeTab {
   @Consume('navStack') navStack: NavPathStack;
   @Prop topInset: number = 0;
   @Prop bottomPad: number = 72;
+  @State avatarPath: string = '';
+  @State avatarFailed: boolean = false;
+  @State hasPassword: boolean = false;
+  @State ssoLinked: boolean = false;
+  @State permissions: Array<string> = [];
   private passwordController: CustomDialogController | null = null;
 
   aboutToAppear(): void {
     this.refreshProfile();
   }
 
-  /** 拉取 /auth/me 刷新昵称/用户名/角色展示（fire-and-forget） */
+  /** 拉取 /auth/me 刷新昵称/用户名/角色/头像/权限展示（fire-and-forget） */
   private refreshProfile(): void {
     AuthService.me().then((user): void => {
       AppStorage.setOrCreate(SessionStore.KEY_DISPLAY_NAME, user.displayName);
       AppStorage.setOrCreate(SessionStore.KEY_USERNAME, user.username);
       AppStorage.setOrCreate(SessionStore.KEY_ROLE, user.role);
+      this.avatarPath = user.avatarUrl;
+      this.avatarFailed = false;
+      this.hasPassword = user.hasPassword;
+      this.ssoLinked = user.ssoLinked;
+      this.permissions = user.permissions;
     }).catch((): void => {
       Log.debug('auth/me refresh failed, keep cached profile');
     });
+  }
+
+  /** 头像绝对地址（相对路径 → baseUrl+token 查询参数；Image 组件无法带 Header） */
+  private avatarFullUrl(): string {
+    if (this.avatarPath === '' || this.avatarFailed) {
+      return '';
+    }
+    if (this.avatarPath.startsWith('http://') || this.avatarPath.startsWith('https://')) {
+      return this.avatarPath;
+    }
+    const base: string = HttpClient.getInstance().getBaseUrl();
+    const token: string = HttpClient.getInstance().getToken();
+    const sep: string = this.avatarPath.includes('?') ? '&' : '?';
+    return `${base}${this.avatarPath}${sep}access_token=${token}`;
+  }
+
+  /** 是否显示用户管理入口（admin 或持 users 权限） */
+  private canManageUsers(): boolean {
+    if (this.role === 'admin') {
+      return true;
+    }
+    for (const item of this.permissions) {
+      if (item === 'users') {
+        return true;
+      }
+    }
+    return false;
   }
 
   private showChangePassword(): void {
@@ -90,18 +128,29 @@ export struct MeTab {
   heroBuilder() {
     Button({ type: ButtonType.Normal, stateEffect: false }) {
       Row({ space: 12 }) {
-        Column() {
-          Image($r('app.media.octop_logo'))
-            .width(28)
-            .height(28)
-            .borderRadius(14)
+        if (this.avatarFullUrl() !== '') {
+          Image(this.avatarFullUrl())
+            .width(40)
+            .height(40)
+            .borderRadius(13)
+            .autoResize(true)
+            .onError((event: ImageError): void => {
+              this.avatarFailed = true;
+            })
+        } else {
+          Column() {
+            Image($r('app.media.octop_logo'))
+              .width(28)
+              .height(28)
+              .borderRadius(14)
+          }
+          .width(40)
+          .height(40)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+          .backgroundColor($r('app.color.bg_input'))
+          .borderRadius(13)
         }
-        .width(40)
-        .height(40)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-        .backgroundColor($r('app.color.bg_input'))
-        .borderRadius(13)
 
         Column({ space: 2 }) {
           Text(this.displayName === '' ? '未登录' : this.displayName)
@@ -123,6 +172,15 @@ export struct MeTab {
               .backgroundColor($r('app.color.brand_light'))
               .borderRadius(5)
               .padding({ left: 5, right: 5, top: 1, bottom: 1 })
+            if (this.ssoLinked) {
+              Text('SSO')
+                .fontSize(9)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.success'))
+                .backgroundColor($r('app.color.success_soft'))
+                .borderRadius(5)
+                .padding({ left: 5, right: 5, top: 1, bottom: 1 })
+            }
           }
           .width('100%')
         }
@@ -202,6 +260,18 @@ export struct MeTab {
             this.sectionHeader('账号')
             Column() {
               SettingsRow({
+                icon: $r('sys.symbol.person'),
+                title: '账号状态',
+                subtitle: this.hasPassword ? '密码已设置' : '未设置密码',
+                trailing: this.ssoLinked ? 'SSO 已绑定' : 'SSO 未绑定',
+                showChevron: false
+              })
+
+              Divider()
+                .color($r('app.color.divider'))
+                .margin({ left: 62 })
+
+              SettingsRow({
                 icon: $r('sys.symbol.lock'),
                 iconColor: $r('app.color.warning'),
                 iconBg: $r('app.color.warning_soft'),
@@ -224,6 +294,23 @@ export struct MeTab {
                   this.navStack.pushPath(new NavPathInfo('settings', null));
                 }
               })
+
+              if (this.canManageUsers()) {
+                Divider()
+                  .color($r('app.color.divider'))
+                  .margin({ left: 62 })
+
+                SettingsRow({
+                  icon: $r('sys.symbol.person'),
+                  iconColor: $r('app.color.success'),
+                  iconBg: $r('app.color.success_soft'),
+                  title: '用户管理',
+                  subtitle: '用户、角色与权限',
+                  onTap: (): void => {
+                    this.navStack.pushPath(new NavPathInfo('users', null));
+                  }
+                })
+              }
             }
             .width('100%')
             .borderRadius(16)

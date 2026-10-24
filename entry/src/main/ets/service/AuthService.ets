@@ -1,5 +1,5 @@
 import { HttpClient } from '../net/HttpClient';
-import { LoginResultModel, OctopUserModel } from '../model/AuthModels';
+import { LoginResultModel, OctopUserModel, UserAccountModel, UserRoleModel } from '../model/AuthModels';
 import { JsonHelper } from '../utils/JsonHelper';
 import { OctopApiError } from '../net/HttpClient';
 import { UrlUtil } from '../utils/UrlUtil';
@@ -32,7 +32,7 @@ export class AuthService {
     await HttpClient.getInstance().post('/api/auth/change-password', JSON.stringify(body));
   }
 
-  /** 当前用户资料（GET /api/auth/me）：刷新昵称/角色等展示信息 */
+  /** 当前用户资料（GET /api/auth/me）：刷新昵称/角色/头像/权限等展示信息 */
   static async me(): Promise<OctopUserModel> {
     const text: string = await HttpClient.getInstance().get('/api/auth/me');
     const rec = JsonHelper.parse(text);
@@ -46,7 +46,81 @@ export class AuthService {
       JsonHelper.getString(source, 'id', ''),
       JsonHelper.getString(source, 'username', ''),
       JsonHelper.getString(source, 'display_name', ''),
-      JsonHelper.getString(source, 'role', 'user')
+      JsonHelper.getString(source, 'role', 'user'),
+      JsonHelper.getString(source, 'avatar_url', ''),
+      JsonHelper.getBool(source, 'has_password', false),
+      JsonHelper.getBool(source, 'sso_linked', false),
+      JsonHelper.getString(source, 'locale', ''),
+      JsonHelper.getStringArray(source, 'permissions')
     );
+  }
+}
+
+/** 用户管理（/api/users，需 users 权限） */
+export class UserService {
+  static async list(): Promise<Array<UserAccountModel>> {
+    const text: string = await HttpClient.getInstance().get('/api/users');
+    return UserAccountModel.parseList(text);
+  }
+
+  static async create(bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().post('/api/users', bodyStr);
+  }
+
+  static async patch(userId: number, bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().patch(`/api/users/${userId}`, bodyStr);
+  }
+
+  static async remove(userId: number): Promise<void> {
+    await HttpClient.getInstance().delete(`/api/users/${userId}`);
+  }
+
+  static async unlockLogin(userId: number): Promise<void> {
+    await HttpClient.getInstance().post(`/api/users/${userId}/unlock-login`, '{}');
+  }
+
+  static async resetPassword(userId: number, newPassword: string): Promise<void> {
+    const body: Record<string, Object> = { 'new_password': newPassword };
+    await HttpClient.getInstance().post(`/api/users/${userId}/reset-password`, JSON.stringify(body));
+  }
+
+  /** 批量操作：action = enable|disable|delete|set_token_quota|set_max_agents */
+  static async batch(userIds: Array<number>, action: string,
+    tokenQuota: number | null = null, maxAgents: number | null = null): Promise<void> {
+    const ids: Array<Object> = [];
+    for (const id of userIds) {
+      ids.push(id);
+    }
+    const body: Record<string, Object> = {
+      'user_ids': ids,
+      'action': action
+    };
+    if (action === 'set_token_quota' && tokenQuota !== null) {
+      body['token_quota'] = tokenQuota;
+    }
+    if (action === 'set_max_agents' && maxAgents !== null) {
+      body['max_agents'] = maxAgents;
+    }
+    await HttpClient.getInstance().post('/api/users/batch', JSON.stringify(body));
+  }
+}
+
+/** 角色模板（/api/users/roles，需 users 权限） */
+export class UserRoleService {
+  static async list(): Promise<Array<UserRoleModel>> {
+    const text: string = await HttpClient.getInstance().get('/api/users/roles');
+    return UserRoleModel.parseList(text);
+  }
+
+  static async create(bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().post('/api/users/roles', bodyStr);
+  }
+
+  static async patch(roleId: string, bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().patch(`/api/users/roles/${roleId}`, bodyStr);
+  }
+
+  static async remove(roleId: string): Promise<void> {
+    await HttpClient.getInstance().delete(`/api/users/roles/${roleId}`);
   }
 }

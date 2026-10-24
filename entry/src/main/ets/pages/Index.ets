@@ -10,6 +10,7 @@ import { ChannelPage } from './workspace/ChannelPage';
 import { ConnectorPage } from './workspace/ConnectorPage';
 import { PluginPage } from './workspace/PluginPage';
 import { MbtiPage } from './workspace/MbtiPage';
+import { UsersPage } from './workspace/UsersPage';
 import { SettingsPage } from './me/SettingsPage';
 import { ThreadSettingsPage } from './chat/ThreadSettingsPage';
 import { SessionStore } from '../store/SessionStore';
@@ -48,6 +49,8 @@ struct Index {
       PluginPage()
     } else if (name === 'mbti') {
       MbtiPage()
+    } else if (name === 'users') {
+      UsersPage()
     } else if (name === 'settings') {
       SettingsPage()
     } else if (name === 'threadSettings') {
