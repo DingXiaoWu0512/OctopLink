@@ -6,6 +6,7 @@ import {
   CronJobModel,
   HitlSettings,
   KnowledgeBaseModel,
+  KnowledgeCapability,
   KnowledgeDocModel,
   MbtiTypeModel,
   MobileCapability
@@ -53,21 +54,50 @@ export class KnowledgeService {
     return KnowledgeBaseModel.parseList(text);
   }
 
-  static async createBase(name: string, description: string): Promise<void> {
+  static async createBase(name: string, description: string, shared: boolean = false,
+    defaultOpen: boolean = false, maxDocs: number = 0): Promise<void> {
     const body: Record<string, Object> = {
       'name': name,
-      'description': description
+      'description': description,
+      'shared': shared,
+      'default_open': defaultOpen
     };
+    if (maxDocs > 0) {
+      body['max_documents'] = maxDocs;
+    }
     await HttpClient.getInstance().post('/api/knowledge-bases', JSON.stringify(body));
+  }
+
+  /** 库编辑（PATCH：name/description/shared/default_open/icon_name/max_documents） */
+  static async patchBase(kbId: string, bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().patch(`/api/knowledge-bases/${kbId}`, bodyStr);
   }
 
   static async removeBase(kbId: string): Promise<void> {
     await HttpClient.getInstance().delete(`/api/knowledge-bases/${kbId}`);
   }
 
+  /** 服务能力与限制（任意登录用户） */
+  static async capability(): Promise<KnowledgeCapability> {
+    const text: string = await HttpClient.getInstance().get('/api/knowledge-bases/capability');
+    return KnowledgeCapability.parse(text);
+  }
+
   static async listDocs(kbId: string): Promise<Array<KnowledgeDocModel>> {
     const text: string = await HttpClient.getInstance().get(`/api/knowledge-bases/${kbId}/documents`);
     return KnowledgeDocModel.parseList(text);
+  }
+
+  /** multipart 上传文档（字段 upload；path 为可选相对路径含文件名） */
+  static async uploadDocument(kbId: string, fileName: string, contentType: string,
+    data: ArrayBuffer, path: string = ''): Promise<void> {
+    const formFields: Record<string, string> = {};
+    if (path !== '') {
+      formFields['path'] = path;
+    }
+    await HttpClient.getInstance().postMultipartFile(
+      `/api/knowledge-bases/${kbId}/documents`, 'upload', fileName, contentType, data,
+      Object.keys(formFields).length > 0 ? formFields : undefined);
   }
 
   /** 创建 md/txt 在线文档 */
@@ -79,6 +109,52 @@ export class KnowledgeService {
     };
     await HttpClient.getInstance().post(
       `/api/knowledge-bases/${kbId}/documents/text`, JSON.stringify(body));
+  }
+
+  /** 创建文件夹 */
+  static async createFolder(kbId: string, path: string): Promise<void> {
+    const body: Record<string, Object> = { 'path': path };
+    await HttpClient.getInstance().post(
+      `/api/knowledge-bases/${kbId}/folders`, JSON.stringify(body));
+  }
+
+  /** 重命名文档/文件夹（文件夹会重写子孙路径） */
+  static async renameDoc(kbId: string, docId: string, newName: string): Promise<void> {
+    const body: Record<string, Object> = { 'new_name': newName };
+    await HttpClient.getInstance().post(
+      `/api/knowledge-bases/${kbId}/documents/${docId}/rename`, JSON.stringify(body));
+  }
+
+  /** 重建单文档索引 */
+  static async reindexDoc(kbId: string, docId: string): Promise<void> {
+    await HttpClient.getInstance().post(
+      `/api/knowledge-bases/${kbId}/documents/${docId}/reindex`, '{}');
+  }
+
+  /** 重建全库索引 */
+  static async reindexKb(kbId: string): Promise<void> {
+    await HttpClient.getInstance().post(`/api/knowledge-bases/${kbId}/reindex`, '{}');
+  }
+
+  /** 读 md/txt 原文 */
+  static async getDocContent(kbId: string, docId: string): Promise<string> {
+    const text: string = await HttpClient.getInstance().get(
+      `/api/knowledge-bases/${kbId}/documents/${docId}/content`);
+    const rec = JsonHelper.parse(text);
+    return rec === null ? '' : JsonHelper.getString(rec, 'text', '');
+  }
+
+  /** 覆写 md/txt 并重建索引 */
+  static async putDocContent(kbId: string, docId: string, content: string): Promise<void> {
+    const body: Record<string, Object> = { 'content': content };
+    await HttpClient.getInstance().put(
+      `/api/knowledge-bases/${kbId}/documents/${docId}/content`, JSON.stringify(body));
+  }
+
+  /** 下载原件字节（disposition=attachment|inline） */
+  static async downloadDoc(kbId: string, docId: string, disposition: string): Promise<ArrayBuffer> {
+    return await HttpClient.getInstance().downloadGet(
+      `/api/knowledge-bases/${kbId}/documents/${docId}/file?disposition=${disposition}`);
   }
 
   static async removeDoc(kbId: string, docId: string): Promise<void> {

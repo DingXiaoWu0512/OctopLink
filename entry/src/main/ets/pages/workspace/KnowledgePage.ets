@@ -39,13 +39,54 @@ export struct KnowledgePage {
   private showCreate(): void {
     this.createController = new CustomDialogController({
       builder: KbCreateDialog({
-        onCreated: (): void => {
+        onSaved: (): void => {
           this.load();
         }
       }),
       autoCancel: true
     });
     this.createController.open();
+  }
+
+  /** 编辑知识库（回填初值，PATCH 保存） */
+  private editBase(base: KnowledgeBaseModel): void {
+    this.createController = new CustomDialogController({
+      builder: KbCreateDialog({
+        kbId: base.id,
+        initialName: base.name,
+        initialDesc: base.description,
+        initialShared: base.shared,
+        initialDefaultOpen: base.defaultOpen,
+        initialMaxDocs: base.maxDocuments,
+        onSaved: (): void => {
+          this.load();
+        }
+      }),
+      autoCancel: true
+    });
+    this.createController.open();
+  }
+
+  /** 长按库：操作菜单 */
+  private showBaseMenu(base: KnowledgeBaseModel): void {
+    this.getUIContext().showActionSheet({
+      title: base.name,
+      message: '选择要执行的操作',
+      sheets: [
+        {
+          title: '编辑知识库',
+          action: (): void => {
+            this.editBase(base);
+          }
+        },
+        {
+          title: '删除知识库',
+          action: (): void => {
+            this.confirmDelete(base);
+          }
+        }
+      ]
+    });
   }
 
   private confirmDelete(base: KnowledgeBaseModel): void {
@@ -163,12 +204,20 @@ export struct KnowledgePage {
                             .maxLines(2)
                             .textOverflow({ overflow: TextOverflow.Ellipsis })
                         }
-                        Text(`${base.docCount} 篇文档`)
-                          .fontSize(11)
-                          .fontColor($r('app.color.success'))
-                          .backgroundColor($r('app.color.success_soft'))
-                          .borderRadius(6)
-                          .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                        Row({ space: 8 }) {
+                          Text(`${base.docCount} 篇文档`)
+                            .fontSize(11)
+                            .fontColor($r('app.color.success'))
+                            .backgroundColor($r('app.color.success_soft'))
+                            .borderRadius(6)
+                            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                          if (base.ownerUsername !== '') {
+                            Text(`@${base.ownerUsername}`)
+                              .fontSize(11)
+                              .fontColor($r('app.color.text_tertiary'))
+                          }
+                        }
+                        .width('100%')
                       }
                       .layoutWeight(1)
                       .alignItems(HorizontalAlign.Start)
@@ -189,7 +238,7 @@ export struct KnowledgePage {
                     .gesture(
                       LongPressGesture()
                         .onAction((event: GestureEvent): void => {
-                          this.confirmDelete(base);
+                          this.showBaseMenu(base);
                         })
                     )
                   }

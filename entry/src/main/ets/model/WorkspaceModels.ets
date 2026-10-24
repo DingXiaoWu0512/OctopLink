@@ -215,6 +215,36 @@ export class KnowledgeDocModel {
   }
 }
 
+/** 知识库服务能力（GET /api/knowledge-bases/capability）：功能开关与限制 */
+export class KnowledgeCapability {
+  readonly enabled: boolean;
+  readonly maxBasesPerOwner: number;
+  readonly maxDocsPerKb: number;
+  readonly maxDocumentBytes: number;
+
+  constructor(enabled: boolean, maxBasesPerOwner: number, maxDocsPerKb: number,
+    maxDocumentBytes: number) {
+    this.enabled = enabled;
+    this.maxBasesPerOwner = maxBasesPerOwner;
+    this.maxDocsPerKb = maxDocsPerKb;
+    this.maxDocumentBytes = maxDocumentBytes;
+  }
+
+  static parse(text: string): KnowledgeCapability {
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return new KnowledgeCapability(false, 0, 0, 0);
+    }
+    const limits: Record<string, Object> | null = JsonHelper.getRecord(rec, 'limits');
+    return new KnowledgeCapability(
+      JsonHelper.getBool(rec, 'enabled', true),
+      limits === null ? 0 : JsonHelper.getNumber(limits, 'max_bases_per_owner', 0),
+      limits === null ? 0 : JsonHelper.getNumber(limits, 'max_docs_per_kb', 0),
+      limits === null ? 0 : JsonHelper.getNumber(limits, 'max_document_bytes', 0)
+    );
+  }
+}
+
 /** 渠道（GET /api/agents/{id}/channels 列表项） */
 export class ChannelModel {
   readonly id: string;

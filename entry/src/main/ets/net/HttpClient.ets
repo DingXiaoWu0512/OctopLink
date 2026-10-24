@@ -84,9 +84,9 @@ export class HttpClient {
     return await this.request(path, http.RequestMethod.DELETE, null, extraHeaders);
   }
 
-  /** multipart/form-data 文件上传（multiFormDataList 由网络栈自动设置边界） */
+  /** multipart/form-data 文件上传（multiFormDataList 由网络栈自动设置边界）；formFields 为附加普通表单字段 */
   async postMultipartFile(path: string, fieldName: string, fileName: string, contentType: string,
-    data: ArrayBuffer): Promise<string> {
+    data: ArrayBuffer, formFields?: Record<string, string>): Promise<string> {
     if (this.baseUrl === '') {
       throw new OctopApiError('服务器地址未配置', 0, 'NO_SERVER');
     }
@@ -98,16 +98,26 @@ export class HttpClient {
       if (this.token !== '') {
         header['Authorization'] = `Bearer ${this.token}`;
       }
-      const formItem: http.MultiFormData = {
+      const formItems: Array<http.MultiFormData> = [{
         name: fieldName,
         contentType: contentType,
         remoteFileName: fileName,
         data: data
-      };
+      }];
+      if (formFields !== undefined) {
+        const keys: Array<string> = Object.keys(formFields);
+        for (const k of keys) {
+          formItems.push({
+            name: k,
+            contentType: 'text/plain',
+            data: formFields[k]
+          });
+        }
+      }
       const options: http.HttpRequestOptions = {
         method: http.RequestMethod.POST,
         header: header,
-        multiFormDataList: [formItem],
+        multiFormDataList: formItems,
         expectDataType: http.HttpDataType.STRING,
         connectTimeout: 10000,
         readTimeout: 120000,
@@ -129,6 +139,51 @@ export class HttpClient {
       }
       const err = e as BusinessError;
       Log.error(`HTTP POST(multipart) ${path} failed: ${err.code} ${err.message}`);
+      throw new OctopApiError('无法连接服务器，请检查网络与地址', 0, 'NETWORK_ERROR');
+    } finally {
+      client.destroy();
+    }
+  }
+
+  /** 二进制下载（GET，返回原始字节；错误响应仍走统一包络解析） */
+  async downloadGet(path: string): Promise<ArrayBuffer> {
+    if (this.baseUrl === '') {
+      throw new OctopApiError('服务器地址未配置', 0, 'NO_SERVER');
+    }
+    const client = http.createHttp();
+    try {
+      const header: Record<string, string> = {
+        'Accept': '*/*'
+      };
+      if (this.token !== '') {
+        header['Authorization'] = `Bearer ${this.token}`;
+      }
+      const options: http.HttpRequestOptions = {
+        method: http.RequestMethod.GET,
+        header: header,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER,
+        connectTimeout: 10000,
+        readTimeout: 120000,
+        usingCache: false
+      };
+      const resp: http.HttpResponse = await client.request(`${this.baseUrl}${path}`, options);
+      this.maybeRenewToken(resp.header);
+      const status: number = resp.responseCode;
+      if (status >= 200 && status < 300) {
+        if (resp.result instanceof ArrayBuffer) {
+          return resp.result;
+        }
+        return new ArrayBuffer(0);
+      }
+      const raw: Object = resp.result;
+      const body: string = typeof raw === 'string' ? raw : '';
+      throw HttpClient.buildApiError(status, body, path, this.token);
+    } catch (e) {
+      if (e instanceof OctopApiError) {
+        throw e;
+      }
+      const err = e as BusinessError;
+      Log.error(`HTTP GET(binary) ${path} failed: ${err.code} ${err.message}`);
       throw new OctopApiError('无法连接服务器，请检查网络与地址', 0, 'NETWORK_ERROR');
     } finally {
       client.destroy();
