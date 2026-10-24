@@ -23,9 +23,11 @@ export class CronJobModel {
   readonly lastStatus: string;
   readonly lastError: string;
   readonly model: string;
+  readonly taskType: string;
 
   constructor(id: string, name: string, trigger: string, prompt: string, enabled: boolean,
-    freshThread: boolean, lastRunAtMs: number, lastStatus: string, lastError: string, model: string) {
+    freshThread: boolean, lastRunAtMs: number, lastStatus: string, lastError: string, model: string,
+    taskType: string) {
     this.id = id;
     this.name = name;
     this.trigger = trigger;
@@ -36,6 +38,7 @@ export class CronJobModel {
     this.lastStatus = lastStatus;
     this.lastError = lastError;
     this.model = model;
+    this.taskType = taskType;
   }
 
   static fromRecord(rec: Record<string, Object>): CronJobModel {
@@ -49,7 +52,8 @@ export class CronJobModel {
       JsonHelper.toMs(rec['last_run_at']),
       JsonHelper.getString(rec, 'last_status', ''),
       JsonHelper.getString(rec, 'last_error', ''),
-      JsonHelper.getString(rec, 'model', '')
+      JsonHelper.getString(rec, 'model', ''),
+      JsonHelper.getString(rec, 'task_type', 'text')
     );
   }
 
@@ -587,6 +591,172 @@ export class AgentPluginModel {
   }
 }
 
+/** 全局插件（GET /api/plugins 列表项） */
+export class GlobalPluginModel {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: string;
+  readonly version: string;
+  readonly description: string;
+  readonly loaded: boolean;
+  readonly enabled: boolean;
+
+  constructor(id: string, name: string, kind: string, version: string, description: string,
+    loaded: boolean, enabled: boolean) {
+    this.id = id;
+    this.name = name;
+    this.kind = kind;
+    this.version = version;
+    this.description = description;
+    this.loaded = loaded;
+    this.enabled = enabled;
+  }
+
+  static fromRecord(rec: Record<string, Object>): GlobalPluginModel {
+    return new GlobalPluginModel(
+      JsonHelper.getString(rec, 'id', ''),
+      JsonHelper.getString(rec, 'name', ''),
+      JsonHelper.getString(rec, 'kind', ''),
+      JsonHelper.getString(rec, 'version', ''),
+      JsonHelper.getString(rec, 'description', ''),
+      JsonHelper.getBool(rec, 'loaded', false),
+      JsonHelper.getBool(rec, 'enabled', JsonHelper.getBool(rec, 'global_enabled', false))
+    );
+  }
+
+  static parseList(text: string): Array<GlobalPluginModel> {
+    const result: Array<GlobalPluginModel> = [];
+    const arr = JsonHelper.parseArray(text);
+    if (arr !== null) {
+      for (const rec of arr) {
+        result.push(GlobalPluginModel.fromRecord(rec));
+      }
+      return result;
+    }
+    const obj = JsonHelper.parse(text);
+    const items = JsonHelper.getRecordArray(obj, 'plugins');
+    for (const rec of items) {
+      result.push(GlobalPluginModel.fromRecord(rec));
+    }
+    return result;
+  }
+}
+
+/** 市场插件（GET /api/plugins/market 目录项） */
+export class MarketPluginModel {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly version: string;
+  readonly kind: string;
+
+  constructor(id: string, name: string, description: string, version: string, kind: string) {
+    this.id = id;
+    this.name = name;
+    this.description = description;
+    this.version = version;
+    this.kind = kind;
+  }
+
+  static fromRecord(rec: Record<string, Object>): MarketPluginModel {
+    return new MarketPluginModel(
+      JsonHelper.getString(rec, 'id', ''),
+      JsonHelper.getString(rec, 'name', ''),
+      JsonHelper.getString(rec, 'description', ''),
+      JsonHelper.getString(rec, 'version', ''),
+      JsonHelper.getString(rec, 'kind', '')
+    );
+  }
+
+  static parseList(text: string): Array<MarketPluginModel> {
+    const result: Array<MarketPluginModel> = [];
+    const arr = JsonHelper.parseArray(text);
+    if (arr !== null) {
+      for (const rec of arr) {
+        result.push(MarketPluginModel.fromRecord(rec));
+      }
+      return result;
+    }
+    const obj = JsonHelper.parse(text);
+    let items = JsonHelper.getRecordArray(obj, 'plugins');
+    if (items.length === 0) {
+      items = JsonHelper.getRecordArray(obj, 'market');
+    }
+    for (const rec of items) {
+      result.push(MarketPluginModel.fromRecord(rec));
+    }
+    return result;
+  }
+}
+
+/** agent 工具配置项（GET /api/plugins/agents/{id}/tools） */
+export class PluginToolModel {
+  readonly pluginId: string;
+  readonly name: string;
+  readonly description: string;
+  readonly enabled: boolean;
+
+  constructor(pluginId: string, name: string, description: string, enabled: boolean) {
+    this.pluginId = pluginId;
+    this.name = name;
+    this.description = description;
+    this.enabled = enabled;
+  }
+
+  static fromRecord(rec: Record<string, Object>): PluginToolModel {
+    return new PluginToolModel(
+      JsonHelper.getString(rec, 'plugin_id', ''),
+      JsonHelper.getString(rec, 'name', ''),
+      JsonHelper.getString(rec, 'description', ''),
+      JsonHelper.getBool(rec, 'enabled', true)
+    );
+  }
+
+  static parseList(text: string): Array<PluginToolModel> {
+    const result: Array<PluginToolModel> = [];
+    const arr = JsonHelper.parseArray(text);
+    if (arr !== null) {
+      for (const rec of arr) {
+        result.push(PluginToolModel.fromRecord(rec));
+      }
+      return result;
+    }
+    const obj = JsonHelper.parse(text);
+    const items = JsonHelper.getRecordArray(obj, 'tools');
+    for (const rec of items) {
+      result.push(PluginToolModel.fromRecord(rec));
+    }
+    return result;
+  }
+}
+
+/** MBTI 维度（dimensions: {"ei": ["I", 72], ...}） */
+export class MbtiDimensionModel {
+  readonly key: string;
+  readonly pole: string;
+  readonly percent: number;
+
+  constructor(key: string, pole: string, percent: number) {
+    this.key = key;
+    this.pole = pole;
+    this.percent = percent;
+  }
+
+  /** 维度中文名 */
+  labelZh(): string {
+    if (this.key === 'ei') {
+      return '精力方向';
+    }
+    if (this.key === 'sn') {
+      return '认知方式';
+    }
+    if (this.key === 'tf') {
+      return '决策方式';
+    }
+    return '生活态度';
+  }
+}
+
 /** MBTI 类型（GET /api/mbti/types 列表项） */
 export class MbtiTypeModel {
   readonly code: string;
@@ -594,13 +764,20 @@ export class MbtiTypeModel {
   readonly nameEn: string;
   readonly summaryZh: string;
   readonly color: string;
+  readonly nicknameZh: string;
+  readonly descriptorsZh: string;
+  readonly dimensions: Array<MbtiDimensionModel>;
 
-  constructor(code: string, nameZh: string, nameEn: string, summaryZh: string, color: string) {
+  constructor(code: string, nameZh: string, nameEn: string, summaryZh: string, color: string,
+    nicknameZh: string, descriptorsZh: string, dimensions: Array<MbtiDimensionModel>) {
     this.code = code;
     this.nameZh = nameZh;
     this.nameEn = nameEn;
     this.summaryZh = summaryZh;
     this.color = color;
+    this.nicknameZh = nicknameZh;
+    this.descriptorsZh = descriptorsZh;
+    this.dimensions = dimensions;
   }
 
   static fromRecord(rec: Record<string, Object>): MbtiTypeModel {
@@ -609,8 +786,38 @@ export class MbtiTypeModel {
       JsonHelper.getString(rec, 'name_zh', ''),
       JsonHelper.getString(rec, 'name_en', ''),
       JsonHelper.getString(rec, 'summary_zh', ''),
-      JsonHelper.getString(rec, 'color', '')
+      JsonHelper.getString(rec, 'color', ''),
+      JsonHelper.getString(rec, 'nickname_zh', ''),
+      JsonHelper.getString(rec, 'descriptors_zh', ''),
+      MbtiTypeModel.parseDimensions(rec)
     );
+  }
+
+  /** dimensions 固定四键 ei/sn/tf/jp，值形如 ["I", 72] */
+  private static parseDimensions(rec: Record<string, Object>): Array<MbtiDimensionModel> {
+    const result: Array<MbtiDimensionModel> = [];
+    const dimRec: Record<string, Object> | null = JsonHelper.toRecord(rec['dimensions']);
+    if (dimRec === null) {
+      return result;
+    }
+    const keys: Array<string> = ['ei', 'sn', 'tf', 'jp'];
+    for (const key of keys) {
+      const value: Object | undefined = dimRec[key];
+      if (value === undefined || value === null || !Array.isArray(value)) {
+        continue;
+      }
+      const arr: Object[] = value as Object[];
+      if (arr.length < 2) {
+        continue;
+      }
+      const pole: Object = arr[0];
+      if (typeof pole !== 'string') {
+        continue;
+      }
+      const percent: Object = arr[1];
+      result.push(new MbtiDimensionModel(key, pole, typeof percent === 'number' ? percent : 0));
+    }
+    return result;
   }
 
   static parseList(text: string): Array<MbtiTypeModel> {
@@ -628,6 +835,83 @@ export class MbtiTypeModel {
       result.push(MbtiTypeModel.fromRecord(rec));
     }
     return result;
+  }
+}
+
+/** MBTI 测试题（GET /api/mbti/test/questions） */
+export class MbtiQuestionModel {
+  readonly id: number;
+  readonly dimension: string;
+  readonly aPole: string;
+  readonly bPole: string;
+  readonly questionZh: string;
+  readonly optionAZh: string;
+  readonly optionBZh: string;
+
+  constructor(id: number, dimension: string, aPole: string, bPole: string, questionZh: string,
+    optionAZh: string, optionBZh: string) {
+    this.id = id;
+    this.dimension = dimension;
+    this.aPole = aPole;
+    this.bPole = bPole;
+    this.questionZh = questionZh;
+    this.optionAZh = optionAZh;
+    this.optionBZh = optionBZh;
+  }
+
+  static fromRecord(rec: Record<string, Object>): MbtiQuestionModel {
+    return new MbtiQuestionModel(
+      JsonHelper.getNumber(rec, 'id', 0),
+      JsonHelper.getString(rec, 'dimension', ''),
+      JsonHelper.getString(rec, 'a_pole', ''),
+      JsonHelper.getString(rec, 'b_pole', ''),
+      JsonHelper.getString(rec, 'question_zh', ''),
+      JsonHelper.getString(rec, 'option_a_zh', ''),
+      JsonHelper.getString(rec, 'option_b_zh', '')
+    );
+  }
+
+  static parseList(text: string): Array<MbtiQuestionModel> {
+    const result: Array<MbtiQuestionModel> = [];
+    const arr = JsonHelper.parseArray(text);
+    if (arr !== null) {
+      for (const rec of arr) {
+        result.push(MbtiQuestionModel.fromRecord(rec));
+      }
+      return result;
+    }
+    const obj = JsonHelper.parse(text);
+    const items = JsonHelper.getRecordArray(obj, 'questions');
+    for (const rec of items) {
+      result.push(MbtiQuestionModel.fromRecord(rec));
+    }
+    return result;
+  }
+}
+
+/** MBTI 测试结果（POST /api/mbti/test/submit 响应） */
+export class MbtiTestResultModel {
+  readonly code: string;
+  readonly applied: boolean;
+  readonly profile: MbtiTypeModel | null;
+
+  constructor(code: string, applied: boolean, profile: MbtiTypeModel | null) {
+    this.code = code;
+    this.applied = applied;
+    this.profile = profile;
+  }
+
+  static parse(text: string): MbtiTestResultModel {
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return new MbtiTestResultModel('', false, null);
+    }
+    const profileRec = JsonHelper.toRecord(rec['profile']);
+    return new MbtiTestResultModel(
+      JsonHelper.getString(rec, 'code', ''),
+      JsonHelper.getBool(rec, 'applied', false),
+      profileRec === null ? null : MbtiTypeModel.fromRecord(profileRec)
+    );
   }
 }
 

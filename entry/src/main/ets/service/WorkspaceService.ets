@@ -7,12 +7,17 @@ import {
   ConnectorInstanceModel,
   CronJobModel,
   CustomMcpServerModel,
+  GlobalPluginModel,
   HitlSettings,
   KnowledgeBaseModel,
   KnowledgeCapability,
   KnowledgeDocModel,
+  MarketPluginModel,
+  MbtiQuestionModel,
+  MbtiTestResultModel,
   MbtiTypeModel,
   MobileCapability,
+  PluginToolModel,
   QrPollResult,
   QrSessionModel,
   TeamModel
@@ -27,16 +32,72 @@ export class CronService {
   }
 
   /** 创建：trigger 为 cron:/interval:/date:/agently: 形式 */
-  static async create(agentId: string, name: string, trigger: string, prompt: string): Promise<void> {
+  static async create(agentId: string, name: string, trigger: string, prompt: string,
+    freshThread: boolean = false, model: string = '', taskType: string = 'text'): Promise<void> {
     const body: Record<string, Object> = {
       'trigger': trigger,
       'prompt': prompt,
-      'enabled': true
+      'enabled': true,
+      'fresh_thread': freshThread,
+      'task_type': taskType
     };
     if (name !== '') {
       body['name'] = name;
     }
+    if (model !== '') {
+      body['model'] = model;
+    }
     await HttpClient.getInstance().post(`/api/agents/${agentId}/cron`, JSON.stringify(body));
+  }
+
+  /** 部分更新（name/trigger/prompt/fresh_thread/enabled/model/task_type 均可选） */
+  static async patch(agentId: string, cronId: string, bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().patch(`/api/agents/${agentId}/cron/${cronId}`, bodyStr);
+  }
+
+  static async get(agentId: string, cronId: string): Promise<CronJobModel> {
+    const text: string = await HttpClient.getInstance().get(`/api/agents/${agentId}/cron/${cronId}`);
+    const rec = JsonHelper.parse(text);
+    return CronJobModel.fromRecord(rec === null ? {} : rec);
+  }
+
+  /** 任务页示例提示词（task_examples.workspace，缺失时取首个可用分组） */
+  static async examples(agentId: string): Promise<Array<string>> {
+    const text: string = await HttpClient.getInstance().get(`/api/agents/${agentId}/cron/examples`);
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return [];
+    }
+    const groups = JsonHelper.toRecord(rec['task_examples']);
+    if (groups === null) {
+      return [];
+    }
+    const workspace: Array<string> = CronService.extractStrings(groups['workspace']);
+    if (workspace.length > 0) {
+      return workspace;
+    }
+    const keys: Array<string> = Object.keys(groups);
+    for (const key of keys) {
+      const found: Array<string> = CronService.extractStrings(groups[key]);
+      if (found.length > 0) {
+        return found;
+      }
+    }
+    return [];
+  }
+
+  private static extractStrings(value: Object | undefined): Array<string> {
+    const result: Array<string> = [];
+    if (value === undefined || value === null || !Array.isArray(value)) {
+      return result;
+    }
+    const arr: Object[] = value as Object[];
+    for (const item of arr) {
+      if (typeof item === 'string') {
+        result.push(item);
+      }
+    }
+    return result;
   }
 
   static async setEnabled(agentId: string, cronId: string, enabled: boolean): Promise<void> {
@@ -501,6 +562,65 @@ export class PluginService {
     await HttpClient.getInstance().patch(
       `/api/plugins/agents/${agentId}`, JSON.stringify(body));
   }
+
+  /** agent 工具配置列表（每工具一个开关，未显式覆盖时默认启用） */
+  static async getAgentTools(agentId: string): Promise<Array<PluginToolModel>> {
+    const text: string = await HttpClient.getInstance().get(`/api/plugins/agents/${agentId}/tools`);
+    return PluginToolModel.parseList(text);
+  }
+
+  /** 覆盖某插件工具的启用状态 */
+  static async patchAgentTools(agentId: string, pluginId: string, enabled: boolean): Promise<void> {
+    const inner: Record<string, Object> = { 'enabled': enabled };
+    const plugins: Record<string, Object> = {};
+    plugins[pluginId] = inner;
+    const body: Record<string, Object> = { 'plugins': plugins };
+    await HttpClient.getInstance().patch(
+      `/api/plugins/agents/${agentId}/tools`, JSON.stringify(body));
+  }
+}
+
+/** 全局插件管理（/api/plugins，需 plugins 权限） */
+export class GlobalPluginService {
+  /** 已安装插件列表 */
+  static async list(): Promise<Array<GlobalPluginModel>> {
+    const text: string = await HttpClient.getInstance().get('/api/plugins');
+    return GlobalPluginModel.parseList(text);
+  }
+
+  /** 全局启停 */
+  static async setEnabled(pluginId: string, enabled: boolean): Promise<void> {
+    const body: Record<string, Object> = { 'enabled': enabled };
+    await HttpClient.getInstance().patch(`/api/plugins/${pluginId}`, JSON.stringify(body));
+  }
+
+  /** 从 URL 安装 ZIP */
+  static async installUrl(url: string): Promise<void> {
+    const body: Record<string, Object> = { 'url': url };
+    await HttpClient.getInstance().post('/api/plugins/install', JSON.stringify(body));
+  }
+
+  /** 市场目录 */
+  static async market(): Promise<Array<MarketPluginModel>> {
+    const text: string = await HttpClient.getInstance().get('/api/plugins/market');
+    return MarketPluginModel.parseList(text);
+  }
+
+  /** 从市场安装（force=true 覆盖已装） */
+  static async marketInstall(pluginId: string, force: boolean = false): Promise<void> {
+    await HttpClient.getInstance().post(
+      `/api/plugins/market/${pluginId}/install?force=${force}`, '{}');
+  }
+
+  /** 卸载 */
+  static async uninstall(pluginId: string): Promise<void> {
+    await HttpClient.getInstance().delete(`/api/plugins/${pluginId}`);
+  }
+
+  /** 从磁盘重载（CLI 安装后使用） */
+  static async reload(): Promise<void> {
+    await HttpClient.getInstance().post('/api/plugins/reload', '{}');
+  }
 }
 
 /** MBTI 人格（/api/mbti/*，agent 上下文经 X-Octop-Agent-Id 头传递） */
@@ -522,6 +642,41 @@ export class MbtiService {
   static async listTypes(): Promise<Array<MbtiTypeModel>> {
     const text: string = await HttpClient.getInstance().get('/api/mbti/types');
     return MbtiTypeModel.parseList(text);
+  }
+
+  /** 单类型详情（含 dimensions/behavior 全量字段） */
+  static async typeDetail(code: string): Promise<MbtiTypeModel> {
+    const text: string = await HttpClient.getInstance().get(`/api/mbti/types/${code}`);
+    const rec = JsonHelper.parse(text);
+    return MbtiTypeModel.fromRecord(rec === null ? {} : rec);
+  }
+
+  /** 人格模板渲染预览 markdown */
+  static async preview(code: string): Promise<string> {
+    const text: string = await HttpClient.getInstance().get(`/api/mbti/preview/${code}`);
+    const rec = JsonHelper.parse(text);
+    return rec === null ? '' : JsonHelper.getString(rec, 'preview', '');
+  }
+
+  /** 28 道测试题 */
+  static async questions(): Promise<Array<MbtiQuestionModel>> {
+    const text: string = await HttpClient.getInstance().get('/api/mbti/test/questions');
+    return MbtiQuestionModel.parseList(text);
+  }
+
+  /** 提交答卷：answers 键为题号字符串、值 'A'/'B'；autoApply 时需 agentId */
+  static async submit(answers: Record<string, Object>, autoApply: boolean,
+    agentId: string = ''): Promise<MbtiTestResultModel> {
+    const body: Record<string, Object> = {
+      'answers': answers,
+      'auto_apply': autoApply,
+      'language': 'zh'
+    };
+    const headers: Record<string, string> | undefined =
+      autoApply && agentId !== '' ? MbtiService.agentHeader(agentId) : undefined;
+    const text: string = await HttpClient.getInstance().post(
+      '/api/mbti/test/submit', JSON.stringify(body), headers);
+    return MbtiTestResultModel.parse(text);
   }
 
   /** 应用人格到 agent */

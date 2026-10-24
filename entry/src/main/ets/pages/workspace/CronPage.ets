@@ -48,13 +48,53 @@ export struct CronPage {
     this.createController = new CustomDialogController({
       builder: CronCreateDialog({
         agentId: this.agentId,
-        onCreated: (): void => {
+        onSaved: (): void => {
           this.load();
         }
       }),
       autoCancel: true
     });
     this.createController.open();
+  }
+
+  private showEdit(job: CronJobModel): void {
+    this.createController = new CustomDialogController({
+      builder: CronCreateDialog({
+        agentId: this.agentId,
+        cronId: job.id,
+        initialName: job.name,
+        initialTrigger: job.trigger,
+        initialPrompt: job.prompt,
+        initialFreshThread: job.freshThread,
+        initialModel: job.model,
+        onSaved: (): void => {
+          this.load();
+        }
+      }),
+      autoCancel: true
+    });
+    this.createController.open();
+  }
+
+  private showJobMenu(job: CronJobModel): void {
+    this.getUIContext().showActionSheet({
+      title: job.name === '' ? job.triggerDisplay() : job.name,
+      message: '选择操作',
+      sheets: [
+        {
+          title: '编辑',
+          action: (): void => {
+            this.showEdit(job);
+          }
+        },
+        {
+          title: '删除',
+          action: (): void => {
+            this.confirmDelete(job);
+          }
+        }
+      ]
+    });
   }
 
   private async toggle(job: CronJobModel, on: boolean): Promise<void> {
@@ -211,6 +251,22 @@ export struct CronPage {
                             .borderRadius(6)
                             .padding({ left: 8, right: 8, top: 3, bottom: 3 })
                             .maxLines(1)
+                          if (job.freshThread) {
+                            Text('新线程')
+                              .fontSize(11)
+                              .fontColor($r('app.color.text_secondary'))
+                              .backgroundColor($r('app.color.bg_input'))
+                              .borderRadius(6)
+                              .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                          }
+                          if (job.model !== '') {
+                            Text(job.model)
+                              .fontSize(11)
+                              .fontColor($r('app.color.text_tertiary'))
+                              .maxLines(1)
+                              .textOverflow({ overflow: TextOverflow.Ellipsis })
+                              .constraintSize({ maxWidth: 130 })
+                          }
                           if (job.lastRunAtMs > 0) {
                             Text(`上次 ${TimeFormat.list(job.lastRunAtMs)}`)
                               .fontSize(11)
@@ -241,6 +297,15 @@ export struct CronPage {
                           })
                         }
                         .width('100%')
+                        if (job.lastError !== '') {
+                          Text(job.lastError)
+                            .fontSize(11)
+                            .fontColor($r('app.color.danger'))
+                            .maxLines(2)
+                            .textOverflow({ overflow: TextOverflow.Ellipsis })
+                            .width('100%')
+                            .lineHeight(15)
+                        }
                       }
                       .layoutWeight(1)
                       .alignItems(HorizontalAlign.Start)
@@ -252,7 +317,7 @@ export struct CronPage {
                     .gesture(
                       LongPressGesture()
                         .onAction((event: GestureEvent): void => {
-                          this.confirmDelete(job);
+                          this.showJobMenu(job);
                         })
                     )
                   }
