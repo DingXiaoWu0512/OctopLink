@@ -85,8 +85,6 @@ export struct MainPage {
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .padding({ left: 12, right: 12, top: 6, bottom: 4 })
-    .borderRadius(16)
-    .backgroundColor(index === this.mainTab ? $r('app.color.nav_pill') : Color.Transparent)
   }
 
   build() {

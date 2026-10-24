@@ -14,10 +14,15 @@ export class ThreadModel {
   readonly turnActive: boolean;
   readonly awaitingUser: boolean;
   readonly modelRef: string;
+  readonly reasoningMode: string;
+  readonly reasoningEffort: string;
+  readonly conversationMode: string;
+  readonly hitlPolicyMode: string;
 
   constructor(threadId: string, title: string, lastActiveMs: number, createdAtMs: number,
     hasMessages: boolean, pinned: boolean, turnActive: boolean, awaitingUser: boolean,
-    modelRef: string) {
+    modelRef: string, reasoningMode: string, reasoningEffort: string, conversationMode: string,
+    hitlPolicyMode: string) {
     this.threadId = threadId;
     this.title = title;
     this.lastActiveMs = lastActiveMs;
@@ -27,9 +32,14 @@ export class ThreadModel {
     this.turnActive = turnActive;
     this.awaitingUser = awaitingUser;
     this.modelRef = modelRef;
+    this.reasoningMode = reasoningMode;
+    this.reasoningEffort = reasoningEffort;
+    this.conversationMode = conversationMode;
+    this.hitlPolicyMode = hitlPolicyMode;
   }
 
   static fromRecord(rec: Record<string, Object>): ThreadModel {
+    const hitlPolicy: Record<string, Object> | null = JsonHelper.getRecord(rec, 'hitl_policy');
     return new ThreadModel(
       JsonHelper.getString(rec, 'thread_id', ''),
       JsonHelper.getString(rec, 'title', ''),
@@ -39,7 +49,11 @@ export class ThreadModel {
       JsonHelper.getBool(rec, 'pinned', false),
       JsonHelper.getBool(rec, 'turn_active', false),
       JsonHelper.getBool(rec, 'awaiting_user', false),
-      JsonHelper.getString(rec, 'model_ref', '')
+      JsonHelper.getString(rec, 'model_ref', ''),
+      JsonHelper.getString(rec, 'reasoning_mode', ''),
+      JsonHelper.getString(rec, 'reasoning_effort', ''),
+      JsonHelper.getString(rec, 'conversation_mode', ''),
+      hitlPolicy === null ? '' : JsonHelper.getString(hitlPolicy, 'mode', '')
     );
   }
 
@@ -111,13 +125,15 @@ export class ContextUsageModel {
   }
 }
 
-/** 历史加载结果：消息列表 + 待审批卡（hitl_pending 非空时） */
+/** 历史加载结果：消息列表 + 待审批卡（hitl_pending 非空时）+ 是否还有更早消息 */
 export class HistoryResult {
   readonly messages: Array<ChatMessageModel>;
   readonly hitlPending: HitlRequestModel | null;
+  readonly hasMore: boolean;
 
-  constructor(messages: Array<ChatMessageModel>, hitlPending: HitlRequestModel | null) {
+  constructor(messages: Array<ChatMessageModel>, hitlPending: HitlRequestModel | null, hasMore: boolean) {
     this.messages = messages;
     this.hitlPending = hitlPending;
+    this.hasMore = hasMore;
   }
 }

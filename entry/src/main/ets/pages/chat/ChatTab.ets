@@ -6,6 +6,7 @@ import { ThreadModel } from '../../model/ThreadModels';
 import { EmptyView } from '../../components/EmptyView';
 import { ErrorRetry } from '../../components/ErrorRetry';
 import { ThreadRenameDialog } from '../../components/ThreadRenameDialog';
+import { ThreadSettingsNavParam } from './ThreadSettingsPage';
 import { TimeFormat } from '../../utils/TimeFormat';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
 import { ThreadDigestCache } from '../../utils/ThreadDigestCache';
@@ -24,6 +25,7 @@ class SessionsThreadGroup {
 /** 会话列表 Tab：日期分组 + 左滑快捷操作（置顶/重命名/删除），点击切回聊天 Tab */
 @Component
 export struct SessionsTab {
+  @Consume('navStack') navStack: NavPathStack;
   @StorageProp(SessionStore.KEY_AGENT_NAME) agentName: string = '';
   @StorageLink(SessionStore.KEY_THREADS_DIRTY) @Watch('onDirtyChanged') threadsDirty: boolean = false;
   @State groups: Array<SessionsThreadGroup> = [];
@@ -176,6 +178,12 @@ export struct SessionsTab {
       }
     });
     sheets.push({
+      title: '会话设置',
+      action: (): void => {
+        this.openThreadSettings(thread);
+      }
+    });
+    sheets.push({
       title: '删除会话',
       action: (): void => {
         this.confirmDeleteThread(thread);
@@ -252,6 +260,12 @@ export struct SessionsTab {
     } finally {
       this.operating = false;
     }
+  }
+
+  /** 打开会话设置页（模型/推理/对话模式/审批策略） */
+  private openThreadSettings(thread: ThreadModel): void {
+    this.navStack.pushPath(new NavPathInfo('threadSettings',
+      new ThreadSettingsNavParam(this.agentId(), thread.threadId)));
   }
 
   private confirmDeleteThread(thread: ThreadModel): void {
@@ -395,6 +409,17 @@ export struct SessionsTab {
             SymbolGlyph($r('sys.symbol.star_fill'))
               .fontSize(13)
               .fontColor([$r('app.color.warning')])
+          }
+          if (thread.modelRef !== '' && thread.modelRef !== 'auto/auto') {
+            Text(thread.modelRef)
+              .fontSize(10)
+              .fontColor($r('app.color.text_tertiary'))
+              .maxLines(1)
+              .constraintSize({ maxWidth: 90 })
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+              .borderRadius(8)
+              .backgroundColor($r('app.color.bg_input'))
           }
           Text(TimeFormat.list(thread.lastActiveMs))
             .fontSize(12)

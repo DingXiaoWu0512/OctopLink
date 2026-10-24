@@ -1,4 +1,4 @@
-import { ChatAttachmentModel, ChatMessageModel, ChatRole } from '../../model/MessageModels';
+import { ChatAttachmentModel, ChatMessageModel, ChatRole, MsgAttachmentModel } from '../../model/MessageModels';
 import { ChatStreamController } from '../../service/ChatStreamController';
 import { OctopApiError } from '../../net/HttpClient';
 import { SessionStore } from '../../store/SessionStore';
@@ -13,6 +13,7 @@ import { StreamingOrbit } from '../../components/StreamingOrbit';
 import { WelcomeCard } from '../../components/WelcomeCard';
 import { ErrorRetry } from '../../components/ErrorRetry';
 import { CommandPalette } from '../../components/CommandPalette';
+import { ModelPickerSheet } from '../../components/ModelPickerSheet';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
 import { TimeFormat } from '../../utils/TimeFormat';
 import { Log } from '../../utils/Logger';
@@ -65,6 +66,13 @@ export struct ChatHomeTab {
   @State contextUsage: ContextUsageModel | null = null;
   @State hitlPending: HitlRequestModel | null = null;
   @State hitlSubmitting: boolean = false;
+  @State turnModel: string = '';
+  @State turnModelLabel: string = '';
+  @State modelSheetOpen: boolean = false;
+  @State historyHasMore: boolean = false;
+  @State loadingEarlier: boolean = false;
+  @State hitlEditOpen: boolean = false;
+  @State hitlEditArgs: string = '';
   private controller: ChatStreamController | null = null;
   private connectingPromise: Promise<boolean> | null = null;
   private scroller: Scroller = new Scroller();
@@ -74,6 +82,8 @@ export struct ChatHomeTab {
   private currentTurnId: string = '';
   private lastConnectedId: string = '';
   private threadCreating: boolean = false;
+  private steerClientPendingId: string = '';
+  private steerServerPendingId: string = '';
 
   aboutToAppear(): void {
     this.startBreathing();
@@ -118,6 +128,10 @@ export struct ChatHomeTab {
     this.contextUsage = null;
     this.hitlPending = null;
     this.hitlSubmitting = false;
+    this.historyHasMore = false;
+    this.loadingEarlier = false;
+    this.steerClientPendingId = '';
+    this.steerServerPendingId = '';
     if (this.agentId === '') {
       return;
     }
@@ -141,6 +155,10 @@ export struct ChatHomeTab {
     this.contextUsage = null;
     this.hitlPending = null;
     this.hitlSubmitting = false;
+    this.historyHasMore = false;
+    this.loadingEarlier = false;
+    this.steerClientPendingId = '';
+    this.steerServerPendingId = '';
     if (this.activeThreadId === '') {
       this.messages = [];
       this.historyReady = true;
@@ -215,6 +233,7 @@ export struct ChatHomeTab {
         return;
       }
       this.messages = result.messages;
+      this.historyHasMore = result.hasMore;
       this.hitlPending = result.hitlPending;
       this.hitlSubmitting = false;
       this.loadError = '';
@@ -231,6 +250,29 @@ export struct ChatHomeTab {
       this.loadError = e instanceof OctopApiError ? e.message : '历史消息加载失败';
       this.historyReady = true;
     }
+  }
+
+  /** 向前翻页加载更早的历史消息（offset=当前已加载数） */
+  private async loadEarlierMessages(): Promise<void> {
+    const threadId: string = this.activeThreadId;
+    const agentId: string = AppStorage.get<string>(SessionStore.KEY_AGENT_ID) ?? '';
+    if (threadId === '' || agentId === '' || this.loadingEarlier) {
+      return;
+    }
+    this.loadingEarlier = true;
+    try {
+      const result: HistoryResult = await ThreadService.historyFull(agentId, threadId, this.messages.length);
+      if (threadId !== (AppStorage.get<string>(SessionStore.KEY_ACTIVE_THREAD_ID) ?? '')) {
+        return;
+      }
+      this.messages = result.messages.concat(this.messages);
+      this.historyHasMore = result.hasMore;
+    } catch (e) {
+      this.getUIContext().getPromptAction().showToast({
+        message: e instanceof OctopApiError ? e.message : '加载更早消息失败'
+      });
+    }
+    this.loadingEarlier = false;
   }
 
   /** 清除线程未读（fire-and-forget），成功后触发专家列表徽章刷新 */
@@ -368,11 +410,43 @@ export struct ChatHomeTab {
         }
       }
     };
+    controller.callbacks.onSpeaker = (agentId: string): void => {
+      const m = this.activeAssistant;
+      if (m !== null && m.speakerId === '') {
+        m.speakerId = agentId;
+      }
+    };
     controller.callbacks.onToolActivity = (name: string): void => {
       const m = this.activeAssistant;
       if (m !== null) {
         m.addToolName(name);
         this.streamPhase = this.toolPhaseText(name);
+      }
+    };
+    controller.callbacks.onToolCall = (id: string, name: string, argsDelta: string): void => {
+      const m = this.activeAssistant;
+      if (m !== null) {
+        m.upsertToolCall(id, name, argsDelta);
+        this.scrollToBottom(false);
+      }
+    };
+    controller.callbacks.onToolResult = (output: string): void => {
+      const m = this.activeAssistant;
+      if (m !== null) {
+        m.setToolResult('', output);
+      }
+    };
+    controller.callbacks.onUsage = (inputTokens: number, outputTokens: number): void => {
+      const m = this.activeAssistant;
+      if (m !== null) {
+        m.setUsage(inputTokens, outputTokens);
+      }
+    };
+    controller.callbacks.onAttachment = (att: MsgAttachmentModel): void => {
+      const m = this.activeAssistant;
+      if (m !== null) {
+        m.addAttachment(att);
+        this.scrollToBottom(false);
       }
     };
     controller.callbacks.onTurnStarted = (turnId: string): void => {
@@ -410,6 +484,30 @@ export struct ChatHomeTab {
           message: status === 'rejected' && reason !== '' ? `追问被拒绝：${reason}` : '追问未成功'
         });
       }
+    };
+    controller.callbacks.onSteerQueued = (clientPendingId: string, pendingId: string, turnId: string): void => {
+      this.steerServerPendingId = pendingId;
+      const pending = this.steerPending;
+      if (pending !== null && pending.clientPendingId === clientPendingId) {
+        pending.isSteerQueued = true;
+      }
+    };
+    controller.callbacks.onSteerRemoved = (clientPendingId: string): void => {
+      const pending = this.steerPending;
+      if (pending !== null && pending.clientPendingId === clientPendingId) {
+        this.removeSteerPending();
+        this.getUIContext().getPromptAction().showToast({ message: '追问已撤回' });
+      }
+    };
+    controller.callbacks.onSteerRejected = (clientPendingId: string, reason: string): void => {
+      const pending = this.steerPending;
+      if (pending === null || pending.clientPendingId !== clientPendingId) {
+        return;
+      }
+      this.removeSteerPending();
+      this.getUIContext().getPromptAction().showToast({
+        message: reason !== '' ? `追问被拒绝：${reason}` : '追问未成功'
+      });
     };
     controller.callbacks.onUserEcho = (content: string): void => {
       if (this.steerPending !== null) {
@@ -453,19 +551,50 @@ export struct ChatHomeTab {
       AppStorage.setOrCreate(SessionStore.KEY_THREADS_DIRTY, true);
       this.refreshContextUsage();
     };
-    controller.callbacks.onConnectionClosed = (code: number, reason: string): void => {
-      Log.warn(`WS connection closed: ${code} ${reason}`);
-      this.wsError = '实时通道已断开，发送消息时将自动重连';
-      if (this.streaming) {
+    controller.callbacks.onTurnStatus = (active: boolean): void => {
+      // 订阅应答：active=true 服务端仍在输出（弱流恢复续流）；false 且本地在等待恢复则中断
+      if (!active && this.streaming && this.streamPhase === '恢复续流中…') {
         const m = this.activeAssistant;
         if (m !== null) {
-          m.markEnded(true, '网络连接中断');
+          m.markEnded(true, '回复中断');
+          this.syncDigest(m.text);
         }
         this.activeAssistant = null;
         this.streaming = false;
         this.streamPhase = '';
+      } else if (active && this.streaming) {
+        this.streamPhase = '正在生成…';
       }
     };
+    controller.callbacks.onConnectionClosed = (code: number, reason: string): void => {
+      Log.warn(`WS connection closed: ${code} ${reason}`);
+      this.wsError = '实时通道已断开，发送消息时将自动重连';
+      if (this.streaming) {
+        // 弱流恢复：保持消息与流状态，稍后重连（subscribe 回放追赶帧 + turn_status）
+        this.streamPhase = '恢复续流中…';
+        setTimeout((): void => {
+          this.recoverConnection();
+        }, 1500);
+      }
+    };
+  }
+
+  /** 弱流恢复重连：成功后由 turn_status/回放帧继续续流 */
+  private async recoverConnection(): Promise<void> {
+    if (!this.streaming) {
+      return;
+    }
+    const ok: boolean = await this.connectWs();
+    if (!ok && this.streaming) {
+      const m = this.activeAssistant;
+      if (m !== null) {
+        m.markEnded(true, '网络连接中断');
+        this.syncDigest(m.text);
+      }
+      this.activeAssistant = null;
+      this.streaming = false;
+      this.streamPhase = '';
+    }
   }
 
   private removeSteerPending(): void {
@@ -566,7 +695,7 @@ export struct ChatHomeTab {
     this.streamPhase = '正在思考…';
     this.scrollToBottom(true);
     try {
-      await controller.sendUserTurn(text, atts);
+      await controller.sendUserTurn(text, atts, this.turnModel);
       AppStorage.setOrCreate(SessionStore.KEY_THREADS_DIRTY, true);
     } catch (e) {
       const am = this.activeAssistant;
@@ -596,15 +725,37 @@ export struct ChatHomeTab {
     this.messages.push(pending);
     this.steerPending = pending;
     this.scrollToBottom(true);
+    const clientPendingId: string = util.generateRandomUUID();
+    pending.clientPendingId = clientPendingId;
+    this.steerClientPendingId = clientPendingId;
+    this.steerServerPendingId = '';
     try {
-      await controller.sendSteer(text, this.currentTurnId, util.generateRandomUUID());
+      await controller.sendSteer(text, this.currentTurnId, clientPendingId);
     } catch (e) {
       this.removeSteerPending();
       this.getUIContext().getPromptAction().showToast({ message: '追问发送失败' });
     }
   }
 
+  /** 撤回已排队的 steer */
+  private async withdrawSteer(): Promise<void> {
+    const controller = this.controller;
+    if (controller === null) {
+      return;
+    }
+    try {
+      await controller.sendSteerRemove(this.currentTurnId, this.steerClientPendingId, this.steerServerPendingId);
+    } catch (e) {
+      this.getUIContext().getPromptAction().showToast({ message: '撤回失败，请重试' });
+    }
+  }
+
   private async cancelTurn(): Promise<void> {
+    // HITL 审批恢复流进行中：中止 SSE 即停止生成
+    if (this.hitlSubmitting) {
+      this.abortHitlResume();
+      return;
+    }
     const c = this.controller;
     if (c === null) {
       return;
@@ -616,8 +767,24 @@ export struct ChatHomeTab {
     }
   }
 
-  /** HITL 决策提交：approve/reject/respond，走 SSE resume 恢复流 */
-  private submitHitl(decisionType: string, message: string): void {
+  /** 中止进行中的 HITL 审批恢复（"停止生成"） */
+  private abortHitlResume(): void {
+    const c = this.controller;
+    if (c !== null) {
+      c.abortResume();
+    }
+    const m = this.activeAssistant;
+    if (m !== null) {
+      m.markEnded(false, '已停止生成');
+    }
+    this.activeAssistant = null;
+    this.streaming = false;
+    this.hitlSubmitting = false;
+    this.streamPhase = '';
+  }
+
+  /** HITL 决策提交：approve/reject/respond/edit，走 SSE resume 恢复流 */
+  private submitHitl(decisionType: string, message: string, editedActionStr: string = ''): void {
     const controller = this.controller;
     const pending = this.hitlPending;
     if (controller === null || pending === null || this.hitlSubmitting) {
@@ -631,7 +798,7 @@ export struct ChatHomeTab {
     this.streaming = true;
     this.streamPhase = '正在生成…';
     this.scrollToBottom(true);
-    controller.resumeHitl(decisionType, message, pending.pendingId);
+    controller.resumeHitl(decisionType, message, pending.pendingId, editedActionStr);
   }
 
   /** 人工回复：使用输入框内容作为 respond 决策消息 */
@@ -643,6 +810,37 @@ export struct ChatHomeTab {
     }
     this.inputText = '';
     this.submitHitl('respond', text);
+  }
+
+  /** 打开 HITL edit 编辑面板：装载首个动作的原始参数 JSON */
+  private startHitlEdit(): void {
+    const pending = this.hitlPending;
+    if (pending === null) {
+      return;
+    }
+    this.hitlEditArgs = pending.editableArgsJson();
+    this.hitlEditOpen = true;
+  }
+
+  /** 提交 edit 决策：校验 JSON 合法后走 resume */
+  private submitHitlEdit(): void {
+    const raw: string = this.hitlEditArgs.trim();
+    if (raw === '') {
+      this.getUIContext().getPromptAction().showToast({ message: '参数不能为空' });
+      return;
+    }
+    try {
+      const parsed: object = JSON.parse(raw) as object;
+      if (parsed === null || typeof parsed !== 'object') {
+        this.getUIContext().getPromptAction().showToast({ message: '参数必须是合法 JSON 对象' });
+        return;
+      }
+    } catch (e) {
+      this.getUIContext().getPromptAction().showToast({ message: '参数必须是合法 JSON 对象' });
+      return;
+    }
+    this.hitlEditOpen = false;
+    this.submitHitl('edit', '', raw);
   }
 
   /** 从相册选择图片并上传为附件 */
@@ -1075,6 +1273,18 @@ export struct ChatHomeTab {
           .onClick((): void => {
             this.submitHitl('reject', '');
           })
+        Button('修改后执行')
+          .fontSize(14)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .backgroundColor($r('app.color.bg_input'))
+          .borderRadius(14)
+          .height(36)
+          .layoutWeight(1)
+          .systemMaterial(UiMaterialKit.button())
+          .onClick((): void => {
+            this.startHitlEdit();
+          })
         Button('批准')
           .fontSize(14)
           .fontWeight(FontWeight.Bold)
@@ -1089,6 +1299,13 @@ export struct ChatHomeTab {
           })
       }
       .width('100%')
+      .bindSheet($$this.hitlEditOpen, this.hitlEditSheetBuilder, {
+        height: 420,
+        showClose: true,
+        onDisappear: (): void => {
+          this.hitlEditOpen = false;
+        }
+      })
       Divider().color($r('app.color.card_stroke'))
       Text('也可以直接在下方输入框填写意见后点「人工回复」')
         .fontSize(11)
@@ -1132,6 +1349,61 @@ export struct ChatHomeTab {
       views.push(new HitlActionView('', '专家请求执行一个受控操作，请确认。', ''));
     }
     return views;
+  }
+
+  /** 本轮模型选择 sheet */
+  @Builder
+  private modelSheetBuilder() {
+    ModelPickerSheet({
+      allowAuto: true,
+      onPick: (ref: string, label: string): void => {
+        this.turnModel = ref;
+        this.turnModelLabel = ref === '' ? '' : label;
+        this.modelSheetOpen = false;
+      }
+    })
+  }
+
+  /** HITL edit 决策面板：编辑动作参数 JSON 后提交 */
+  @Builder
+  private hitlEditSheetBuilder() {
+    Column({ space: 10 }) {
+      Text('修改操作参数')
+        .fontSize(17)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+        .padding({ top: 18, bottom: 4 })
+      Text('以 JSON 格式调整参数，提交后专家将按修改后的参数执行')
+        .fontSize(12)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+      TextArea({ text: this.hitlEditArgs })
+        .fontSize(12)
+        .fontFamily('monospace')
+        .fontColor($r('app.color.text_primary'))
+        .backgroundColor($r('app.color.bg_input'))
+        .borderRadius(12)
+        .constraintSize({ minHeight: 140 })
+        .width('100%')
+        .onChange((value: string): void => {
+          this.hitlEditArgs = value;
+        })
+      Button('按修改后参数执行')
+        .fontSize(15)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(Color.White)
+        .backgroundColor($r('app.color.brand'))
+        .borderRadius(16)
+        .height(44)
+        .width('100%')
+        .margin({ top: 4 })
+        .onClick((): void => {
+          this.submitHitlEdit();
+        })
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, bottom: 30 })
   }
 
   @Builder
@@ -1343,6 +1615,27 @@ export struct ChatHomeTab {
       } else {
         Stack({ alignContent: Alignment.Bottom }) {
           List({ scroller: this.scroller, space: 12 }) {
+            if (this.historyHasMore) {
+              ListItem() {
+                Row({ space: 6 }) {
+                  if (this.loadingEarlier) {
+                    LoadingProgress()
+                      .width(14)
+                      .height(14)
+                      .color($r('app.color.brand'))
+                  }
+                  Text(this.loadingEarlier ? '正在加载…' : '加载更早的消息')
+                    .fontSize(12)
+                    .fontColor($r('app.color.text_secondary'))
+                }
+                .width('100%')
+                .justifyContent(FlexAlign.Center)
+                .padding({ top: 6, bottom: 6 })
+                .onClick((): void => {
+                  this.loadEarlierMessages();
+                })
+              }
+            }
             if (this.messages.length === 0) {
               ListItem() {
                 this.emptyStateBuilder()
@@ -1354,6 +1647,9 @@ export struct ChatHomeTab {
                   msg: msg,
                   onRetry: (): void => {
                     this.retryLastTurn();
+                  },
+                  onSteerRemove: (): void => {
+                    this.withdrawSteer();
                   }
                 })
               }
@@ -1498,6 +1794,32 @@ export struct ChatHomeTab {
           .systemMaterial(UiMaterialKit.button())
           .onClick((): void => {
             this.polishInput();
+          })
+
+          Button({ stateEffect: true }) {
+            Row({ space: 4 }) {
+              Text(this.turnModelLabel === '' ? '自动' : this.turnModelLabel)
+                .fontSize(11)
+                .fontColor(this.turnModelLabel === '' ?
+                  $r('app.color.text_secondary') : $r('app.color.brand'))
+                .maxLines(1)
+                .constraintSize({ maxWidth: 90 })
+              SymbolGlyph($r('sys.symbol.chevron_down'))
+                .fontSize(9)
+                .fontColor([$r('app.color.text_tertiary')])
+            }
+          }
+          .height(30)
+          .padding({ left: 10, right: 8 })
+          .borderRadius(15)
+          .backgroundColor($r('app.color.bg_input'))
+          .systemMaterial(UiMaterialKit.button())
+          .onClick((): void => {
+            this.modelSheetOpen = true;
+          })
+          .bindSheet($$this.modelSheetOpen, this.modelSheetBuilder, {
+            detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+            systemMaterial: UiMaterialKit.sheet()
           })
 
           Blank()

@@ -4,7 +4,7 @@ import { HttpClient } from '../net/HttpClient';
 import { JsonHelper } from '../utils/JsonHelper';
 import { UrlUtil } from '../utils/UrlUtil';
 import { Log } from '../utils/Logger';
-import { ChatAttachmentModel } from '../model/MessageModels';
+import { ChatAttachmentModel, MsgAttachmentModel } from '../model/MessageModels';
 import { HitlRequestModel } from '../model/HitlModels';
 
 /** 流式回调集合（由聊天页注入） */
@@ -38,6 +38,37 @@ export class StreamCallbacks {
   /** HITL 恢复 SSE 流结束（done/error/再次 hitl_required） */
   onResumeStreamEnd: (failed: boolean) => void = (failed: boolean) => {
   };
+  /** 团队成员发言者（token 帧 agent_id） */
+  onSpeaker: (agentId: string) => void = (agentId: string) => {
+  };
+  /** 回合 token 用量（usage 帧，字段名双兼容） */
+  onUsage: (inputTokens: number, outputTokens: number) => void =
+    (inputTokens: number, outputTokens: number) => {
+    };
+  /** 消息内媒体附件（attachment 帧） */
+  onAttachment: (att: MsgAttachmentModel) => void = (att: MsgAttachmentModel) => {
+  };
+  /** 工具调用流式分片（tool_call_chunk：id/name/args 增量） */
+  onToolCall: (id: string, name: string, argsDelta: string) => void =
+    (id: string, name: string, argsDelta: string) => {
+    };
+  /** 工具执行结果文本（tool_result 帧，按到达顺序附加） */
+  onToolResult: (output: string) => void = (output: string) => {
+  };
+  /** 订阅状态应答（active=true 服务端仍在流式输出，弱流恢复判定） */
+  onTurnStatus: (active: boolean) => void = (active: boolean) => {
+  };
+  /** steer 排队成功（steer.queued，服务端分配 pending_id） */
+  onSteerQueued: (clientPendingId: string, pendingId: string, turnId: string) => void =
+    (clientPendingId: string, pendingId: string, turnId: string) => {
+    };
+  /** steer 撤回成功（steer.removed） */
+  onSteerRemoved: (clientPendingId: string) => void = (clientPendingId: string) => {
+  };
+  /** steer 排队被拒（steer.rejected；注意拒绝不发 error 帧） */
+  onSteerRejected: (clientPendingId: string, reason: string) => void =
+    (clientPendingId: string, reason: string) => {
+    };
 }
 
 /**
@@ -53,6 +84,7 @@ export class ChatStreamController {
   private threadId: string;
   private activeSse: SseClient | null = null;
   private pendingHitl: HitlRequestModel | null = null;
+  private pingTimer: number = -1;
   readonly callbacks: StreamCallbacks = new StreamCallbacks();
 
   constructor(agentId: string, threadId: string) {
@@ -69,6 +101,7 @@ export class ChatStreamController {
       this.handleFrame(text);
     });
     this.ws.setClosedHandler((code: number, reason: string): void => {
+      this.stopHeartbeat();
       this.callbacks.onConnectionClosed(code, reason);
     });
     const baseUrl: string = HttpClient.getInstance().getBaseUrl();
@@ -81,14 +114,43 @@ export class ChatStreamController {
       'thread_id': this.threadId
     };
     await this.ws.send(JSON.stringify(subscribe));
+    this.startHeartbeat();
   }
 
-  async sendUserTurn(text: string, attachments?: Array<ChatAttachmentModel>): Promise<void> {
+  /** 25s 心跳（服务端回 pong），保持长连接与中间设备存活 */
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.pingTimer = setInterval((): void => {
+      this.sendPing();
+    }, 25000);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.pingTimer >= 0) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = -1;
+    }
+  }
+
+  async sendPing(): Promise<void> {
+    const frame: Record<string, Object> = { 'type': 'ping' };
+    try {
+      await this.ws.send(JSON.stringify(frame));
+    } catch (e) {
+      Log.debug('ping send failed, connection may be lost');
+    }
+  }
+
+  async sendUserTurn(text: string, attachments?: Array<ChatAttachmentModel>,
+    model?: string): Promise<void> {
     const frame: Record<string, Object> = {
       'type': 'user_turn',
       'text': text,
       'thread_id': this.threadId
     };
+    if (model !== undefined && model !== '') {
+      frame['model'] = model;
+    }
     if (attachments !== undefined && attachments.length > 0) {
       const items: Array<Record<string, Object>> = [];
       for (const att of attachments) {
@@ -103,8 +165,10 @@ export class ChatStreamController {
    * HITL 审批恢复：POST SSE /api/agents/{id}/chat/hitl/resume。
    * SSE 帧与 WS 帧同构（token/reasoning/tool/turn/done/error/hitl_required），
    * 复用同一套 handleFrame 路由；done/error 时回调 onResumeStreamEnd。
+   * editedActionStr 非空时为 edit 决策（edited_action JSON 对象文本）。
    */
-  async resumeHitl(decisionType: string, message: string, pendingId: string): Promise<void> {
+  async resumeHitl(decisionType: string, message: string, pendingId: string,
+    editedActionStr: string = ''): Promise<void> {
     const baseUrl: string = HttpClient.getInstance().getBaseUrl();
     const token: string = HttpClient.getInstance().getToken();
     const headers: Record<string, string> = {
@@ -115,6 +179,12 @@ export class ChatStreamController {
     const decision: Record<string, Object> = { 'type': decisionType };
     if (message !== '') {
       decision['message'] = message;
+    }
+    if (editedActionStr !== '') {
+      const edited: Record<string, Object> | null = JsonHelper.parse(editedActionStr);
+      if (edited !== null) {
+        decision['edited_action'] = edited;
+      }
     }
     const decisions: Array<Record<string, Object>> = [decision];
     const hitlPolicy: Record<string, Object> = { 'mode': 'ask' };
@@ -206,6 +276,18 @@ export class ChatStreamController {
     await this.ws.send(JSON.stringify(frame));
   }
 
+  /** 撤回已排队的 steer（服务端 steer.removed 广播确认） */
+  async sendSteerRemove(turnId: string, clientPendingId: string, pendingId: string): Promise<void> {
+    const frame: Record<string, Object> = {
+      'type': 'steer_remove',
+      'thread_id': this.threadId,
+      'turn_id': turnId,
+      'client_pending_id': clientPendingId,
+      'pending_id': pendingId
+    };
+    await this.ws.send(JSON.stringify(frame));
+  }
+
   async cancelTurn(): Promise<void> {
     const frame: Record<string, Object> = {
       'type': 'cancel',
@@ -215,6 +297,7 @@ export class ChatStreamController {
   }
 
   close(): void {
+    this.stopHeartbeat();
     this.ws.close();
   }
 
@@ -230,15 +313,64 @@ export class ChatStreamController {
       return;
     }
     switch (type) {
-      case 'token':
+      case 'token': {
+        const speaker: string = JsonHelper.getString(rec, 'agent_id', '');
+        if (speaker !== '') {
+          this.callbacks.onSpeaker(speaker);
+        }
         this.callbacks.onTextDelta(JsonHelper.getString(rec, 'content', ''));
         break;
+      }
       case 'reasoning':
         this.callbacks.onReasoningDelta(JsonHelper.getString(rec, 'content', ''));
         break;
-      case 'tool_call_chunk':
-      case 'tool_result':
-        this.callbacks.onToolActivity(JsonHelper.getString(rec, 'name', ''));
+      case 'tool_call_chunk': {
+        // name/args 均为分片累积；display_name 优先做活动提示
+        const id: string = JsonHelper.getString(rec, 'id', '');
+        const name: string = JsonHelper.getString(rec, 'name', '');
+        const argsDelta: string = JsonHelper.getString(rec, 'args', '');
+        this.callbacks.onToolCall(id, name, argsDelta);
+        const display: string = JsonHelper.getString(rec, 'display_name', name);
+        this.callbacks.onToolActivity(display);
+        break;
+      }
+      case 'tool_result': {
+        // messages 数组提取文本结果（按到达顺序附加到最近一次调用）
+        const msgRecs: Array<Record<string, Object>> = JsonHelper.getRecordArray(rec, 'messages');
+        let output: string = '';
+        for (const msgRec of msgRecs) {
+          const c: Object | undefined = msgRec['content'];
+          if (typeof c === 'string') {
+            output += c;
+          } else {
+            const blocks: Array<Record<string, Object>> = JsonHelper.getRecordArray(msgRec, 'content');
+            for (const block of blocks) {
+              output += JsonHelper.getString(block, 'text', '');
+            }
+          }
+        }
+        if (output.length > 500) {
+          output = `${output.substring(0, 500)}…`;
+        }
+        if (output !== '') {
+          this.callbacks.onToolResult(output);
+        }
+        break;
+      }
+      case 'usage': {
+        // token 字段名契约未明示，双兼容解析
+        const inputTokens: number = JsonHelper.getNumber(rec, 'input_tokens',
+          JsonHelper.getNumber(rec, 'prompt_tokens', 0));
+        const outputTokens: number = JsonHelper.getNumber(rec, 'output_tokens',
+          JsonHelper.getNumber(rec, 'completion_tokens', 0));
+        this.callbacks.onUsage(inputTokens, outputTokens);
+        break;
+      }
+      case 'attachment':
+        this.callbacks.onAttachment(MsgAttachmentModel.fromFrameRecord(rec));
+        break;
+      case 'turn_status':
+        this.callbacks.onTurnStatus(JsonHelper.getBool(rec, 'active', false));
         break;
       case 'turn.started':
       case 'turn.resumed':
@@ -250,6 +382,20 @@ export class ChatStreamController {
       case 'steer.ack':
         this.callbacks.onSteerAck(
           JsonHelper.getString(rec, 'status', ''), JsonHelper.getString(rec, 'reason', ''));
+        break;
+      case 'steer.queued':
+        this.callbacks.onSteerQueued(
+          JsonHelper.getString(rec, 'client_pending_id', ''),
+          JsonHelper.getString(rec, 'pending_id', ''),
+          JsonHelper.getString(rec, 'turn_id', ''));
+        break;
+      case 'steer.removed':
+        this.callbacks.onSteerRemoved(JsonHelper.getString(rec, 'client_pending_id', ''));
+        break;
+      case 'steer.rejected':
+        this.callbacks.onSteerRejected(
+          JsonHelper.getString(rec, 'client_pending_id', ''),
+          JsonHelper.getString(rec, 'reason', ''));
         break;
       case 'user': {
         // drain 后服务端合成的正式用户气泡（meta.steer=true 时）
@@ -283,8 +429,16 @@ export class ChatStreamController {
           this.callbacks.onHitlRequired(this.pendingHitl);
         }
         break;
+      case 'pong':
+      case 'done':
+      case 'state_update':
+      case 'state_snapshot':
+      case 'slash_action':
+      case 'custom':
+        // 心跳应答/harness 结束（turn.ended 为准）等静默处理
+        break;
       default:
-        // pong/usage/done/state_update/steer.*/user/attachment 等帧 MVP 不处理
+        // steer.drained/steer.queue_snapshot 等帧 MVP 不处理
         Log.debug(`WS frame ignored: ${type}`);
         break;
     }

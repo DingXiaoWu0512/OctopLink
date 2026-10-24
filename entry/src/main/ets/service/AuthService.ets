@@ -5,8 +5,9 @@ import { OctopApiError } from '../net/HttpClient';
 import { UrlUtil } from '../utils/UrlUtil';
 
 export class AuthService {
-  /** 登录并返回解析后的会话结果 */
-  static async login(rawBaseUrl: string, username: string, password: string): Promise<LoginResultModel> {
+  /** 登录并返回解析后的会话结果（captchaToken：验证码开启时必填，暂不集成时传空串） */
+  static async login(rawBaseUrl: string, username: string, password: string,
+    captchaToken: string = ''): Promise<LoginResultModel> {
     const baseUrl = UrlUtil.normalizeServerUrl(rawBaseUrl);
     const client = HttpClient.getInstance();
     client.setBaseUrl(baseUrl);
@@ -15,6 +16,9 @@ export class AuthService {
       'username': username,
       'password': password
     };
+    if (captchaToken !== '') {
+      body['captcha_token'] = captchaToken;
+    }
     const text: string = await client.post('/api/auth/login', JSON.stringify(body));
     return LoginResultModel.fromResponse(text);
   }

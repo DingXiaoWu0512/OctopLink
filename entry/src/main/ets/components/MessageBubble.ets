@@ -1,4 +1,4 @@
-import { ChatMessageModel, ChatRole } from '../model/MessageModels';
+import { ChatMessageModel, ChatRole, ToolCallModel, MsgAttachmentModel } from '../model/MessageModels';
 import { TimeFormat } from '../utils/TimeFormat';
 import { MarkdownText } from './MarkdownText';
 import { StreamingOrbit } from './StreamingOrbit';
@@ -9,7 +9,11 @@ import { pasteboard } from '@kit.BasicServicesKit';
 export struct MessageBubble {
   @ObjectLink msg: ChatMessageModel;
   @State reasoningExpanded: boolean = false;
+  @State toolCallExpanded: boolean = false;
   onRetry: () => void = (): void => {
+  };
+  /** 排队追问撤回（气泡下方"撤回"按钮） */
+  onSteerRemove: () => void = (): void => {
   };
 
   private async copyText(): Promise<void> {
@@ -95,6 +99,107 @@ export struct MessageBubble {
     .alignItems(HorizontalAlign.Start)
   }
 
+  /** 工具调用折叠卡：名称 + 参数单行摘要，点击展开参数/结果 */
+  @Builder
+  toolCallBlock(call: ToolCallModel) {
+    Column({ space: 5 }) {
+      Row({ space: 6 }) {
+        SymbolGlyph($r('sys.symbol.wrench_and_screwdriver'))
+          .fontSize(12)
+          .fontColor([$r('app.color.brand')])
+        Text(call.name === '' ? '工具调用' : call.name)
+          .fontSize(12)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        if (call.resultText !== '') {
+          Text('完成')
+            .fontSize(10)
+            .fontColor($r('app.color.success'))
+            .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+            .borderRadius(6)
+            .backgroundColor($r('app.color.success_soft'))
+        }
+        SymbolGlyph($r('sys.symbol.chevron_down'))
+          .fontSize(12)
+          .fontColor([$r('app.color.text_tertiary')])
+          .rotate({ angle: this.toolCallExpanded ? 180 : 0 })
+          .animation({ duration: 200, curve: Curve.EaseOut })
+      }
+      .width('100%')
+      .onClick((): void => {
+        this.toolCallExpanded = !this.toolCallExpanded;
+      })
+
+      if (!this.toolCallExpanded && call.argsText !== '') {
+        Text(call.argsText)
+          .fontSize(11)
+          .fontColor($r('app.color.text_tertiary'))
+          .fontFamily('monospace')
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+      }
+      if (this.toolCallExpanded) {
+        if (call.argsText !== '') {
+          Text(call.argsText)
+            .fontSize(11)
+            .fontColor($r('app.color.text_tertiary'))
+            .fontFamily('monospace')
+            .width('100%')
+            .padding(8)
+            .borderRadius(8)
+            .backgroundColor($r('app.color.bg_card'))
+        }
+        if (call.resultText !== '') {
+          Text(call.resultText)
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+            .padding(8)
+            .borderRadius(8)
+            .backgroundColor($r('app.color.bg_card'))
+        }
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+    .borderRadius(10)
+    .backgroundColor($r('app.color.bg_input'))
+    .onClick((): void => {
+      this.toolCallExpanded = !this.toolCallExpanded;
+    })
+  }
+
+  /** 消息内媒体附件（attachment 帧） */
+  @Builder
+  attachmentBlock(att: MsgAttachmentModel) {
+    Column({ space: 4 }) {
+      if (att.displayUrl() !== '' && att.isImage()) {
+        Image(att.displayUrl())
+          .width(160)
+          .borderRadius(10)
+          .autoResize(true)
+          .alt($r('app.media.octop_logo'))
+      }
+      if (att.filename !== '' || att.altText !== '') {
+        Text(att.filename !== '' ? att.filename : att.altText)
+          .fontSize(11)
+          .fontColor($r('app.color.text_tertiary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .constraintSize({ maxWidth: 180 })
+      }
+    }
+    .alignItems(HorizontalAlign.Start)
+    .padding(att.displayUrl() !== '' && att.isImage() ? 4 : { left: 8, right: 8, top: 4, bottom: 4 })
+    .backgroundColor($r('app.color.bg_input'))
+    .borderRadius(10)
+  }
+
   build() {
     Column() {
       if (this.msg.role === ChatRole.USER) {
@@ -103,6 +208,17 @@ export struct MessageBubble {
             Column({ space: 6 }) {
               if (this.msg.text !== '') {
                 MarkdownText({ text: this.msg.text, fontSize: 16, color: $r('app.color.text_bubble_user') })
+              }
+              if (this.msg.attachments.length > 0) {
+                ForEach(this.msg.attachments, (att: MsgAttachmentModel) => {
+                  Text(att.filename !== '' ? att.filename : '附件')
+                    .fontSize(12)
+                    .fontColor($r('app.color.text_bubble_user'))
+                    .maxLines(1)
+                    .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+                    .borderRadius(9)
+                    .backgroundColor('#26000000')
+                }, (att: MsgAttachmentModel, index: number) => `${index}_${att.filename}`)
               }
               if (this.msg.attachmentNames.length > 0) {
                 ForEach(this.msg.attachmentNames, (name: string) => {
@@ -142,6 +258,21 @@ export struct MessageBubble {
             .width('100%')
             .justifyContent(FlexAlign.End)
           }
+          if (this.msg.isSteerQueued) {
+            Row() {
+              Text('排队中，点击撤回')
+                .fontSize(11)
+                .fontColor($r('app.color.text_tertiary'))
+                .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                .borderRadius(10)
+                .backgroundColor($r('app.color.bg_input'))
+                .onClick((): void => {
+                  this.onSteerRemove();
+                })
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.End)
+          }
         }
         .width('100%')
         .transition(this.msg.fresh ?
@@ -151,10 +282,30 @@ export struct MessageBubble {
           TransitionEffect.IDENTITY)
       } else {
         Column({ space: 6 }) {
+          if (this.msg.speakerName !== '') {
+            Text(this.msg.speakerName)
+              .fontSize(12)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_secondary'))
+              .maxLines(1)
+          }
           if (this.msg.reasoning !== '') {
             this.reasoningBlock()
           }
-          if (this.msg.toolNames.length > 0) {
+          if (this.msg.toolCalls.length > 0) {
+            ForEach(this.msg.toolCalls, (call: ToolCallModel) => {
+              this.toolCallBlock(call)
+            }, (call: ToolCallModel, index: number) => `${index}_${call.id}_${call.name}_${call.resultText !== ''}`)
+          }
+          if (this.msg.attachments.length > 0) {
+            Row({ space: 8 }) {
+              ForEach(this.msg.attachments, (att: MsgAttachmentModel) => {
+                this.attachmentBlock(att)
+              }, (att: MsgAttachmentModel, index: number) => `${index}_${att.filename}_${att.url}`)
+            }
+            .width('100%')
+          }
+          if (this.msg.toolNames.length > 0 && this.msg.toolCalls.length === 0) {
             Row({ space: 6 }) {
               Text('已调用')
                 .fontSize(11)

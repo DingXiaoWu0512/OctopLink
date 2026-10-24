@@ -21,18 +21,25 @@ export class ThreadService {
     return ChatMessageModel.parseHistory(text);
   }
 
-  /** 历史加载（含待审批卡 hitl_pending 解析） */
-  static async historyFull(agentId: string, threadId: string): Promise<HistoryResult> {
-    const text: string =
-      await HttpClient.getInstance().get(`/api/agents/${agentId}/threads/${threadId}/history?limit=200`);
+  /** 历史加载（含待审批卡 hitl_pending 解析）；offset 向前翻页（0=最新一页） */
+  static async historyFull(agentId: string, threadId: string, offset: number = 0): Promise<HistoryResult> {
+    const text: string = await HttpClient.getInstance().get(
+      `/api/agents/${agentId}/threads/${threadId}/history?limit=200&offset=${offset}`);
     const messages: Array<ChatMessageModel> = ChatMessageModel.parseHistory(text);
     const rec = JsonHelper.parse(text);
     let hitlPending: HitlRequestModel | null = null;
+    let hasMore: boolean = false;
     if (rec !== null) {
       const pendingRec: Record<string, Object> | null = JsonHelper.getRecord(rec, 'hitl_pending');
       hitlPending = HitlRequestModel.fromFrameRecord(pendingRec);
+      hasMore = JsonHelper.getBool(rec, 'has_more', false);
     }
-    return new HistoryResult(messages, hitlPending);
+    return new HistoryResult(messages, hitlPending, hasMore);
+  }
+
+  /** 会话级组合器设置（PATCH threads：model_ref/reasoning_mode/reasoning_effort/conversation_mode/hitl_policy） */
+  static async updateThreadSettings(agentId: string, threadId: string, bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().patch(`/api/agents/${agentId}/threads/${threadId}`, bodyStr);
   }
 
   static async rename(agentId: string, threadId: string, title: string): Promise<void> {

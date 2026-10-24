@@ -38,6 +38,8 @@ export struct LoginPage {
       if (e instanceof OctopApiError) {
         if (e.code === 'AUTH_FAILED') {
           this.errorMsg = '用户名或密码错误';
+        } else if (e.code === 'CAPTCHA_REQUIRED') {
+          this.errorMsg = '该服务器开启了登录验证码，请先在 Web 端登录后再使用 App';
         } else if (e.code === 'SETUP_REQUIRED') {
           this.errorMsg = '服务器尚未初始化，请先在 Web 端完成管理员设置';
         } else if (e.code === 'LOGIN_LOCKED') {

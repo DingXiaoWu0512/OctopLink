@@ -5,11 +5,13 @@ export class HitlActionModel {
   readonly name: string;
   readonly description: string;
   readonly argsPreview: string;
+  readonly argsJson: string;
 
-  constructor(name: string, description: string, argsPreview: string) {
+  constructor(name: string, description: string, argsPreview: string, argsJson: string) {
     this.name = name;
     this.description = description;
     this.argsPreview = argsPreview;
+    this.argsJson = argsJson;
   }
 }
 
@@ -53,23 +55,33 @@ export class HitlRequestModel {
     return HitlRequestModel.fromRecord(inner !== null ? inner : rec);
   }
 
+  /** edit 决策用的完整参数 JSON（首个动作），无参数时返回 '{}' */
+  editableArgsJson(): string {
+    if (this.actions.length > 0 && this.actions[0].argsJson !== '') {
+      return this.actions[0].argsJson;
+    }
+    return '{}';
+  }
+
   private static parseAction(rec: Record<string, Object>): HitlActionModel {
     const name: string = HitlRequestModel.firstString(rec, ['name', 'action', 'tool', 'tool_name', 'title']);
     const description: string =
       HitlRequestModel.firstString(rec, ['description', 'summary', 'intro', 'reason', 'prompt']);
     let argsPreview: string = HitlRequestModel.firstString(rec, ['args_preview', 'preview', 'content']);
+    let argsJson: string = '';
     if (argsPreview === '') {
       const argsKeys: Array<string> = ['args', 'input', 'arguments'];
       for (const key of argsKeys) {
         const value: Object | undefined = rec[key];
         if (value !== undefined && value !== null) {
           const raw: string = JSON.stringify(value);
+          argsJson = raw;
           argsPreview = raw.length > 200 ? `${raw.substring(0, 200)}…` : raw;
           break;
         }
       }
     }
-    return new HitlActionModel(name, description, argsPreview);
+    return new HitlActionModel(name, description, argsPreview, argsJson);
   }
 
   private static firstString(rec: Record<string, Object>, keys: Array<string>): string {
