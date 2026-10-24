@@ -76,6 +76,10 @@ export class HttpClient {
     return await this.request(path, http.RequestMethod.PATCH, bodyStr, extraHeaders);
   }
 
+  async put(path: string, bodyStr: string | null, extraHeaders?: Record<string, string>): Promise<string> {
+    return await this.request(path, http.RequestMethod.PUT, bodyStr, extraHeaders);
+  }
+
   async delete(path: string, extraHeaders?: Record<string, string>): Promise<string> {
     return await this.request(path, http.RequestMethod.DELETE, null, extraHeaders);
   }

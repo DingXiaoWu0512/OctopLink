@@ -446,3 +446,119 @@ export class MobileCapability {
     );
   }
 }
+
+/** 已解析可用模型（GET /api/providers/resolved 列表项，模型选择器数据源） */
+export class ResolvedModelEntry {
+  readonly providerId: number;
+  readonly providerName: string;
+  readonly providerKind: string;
+  readonly model: string;
+  readonly name: string;
+  readonly reasoning: boolean;
+
+  constructor(providerId: number, providerName: string, providerKind: string,
+    model: string, name: string, reasoning: boolean) {
+    this.providerId = providerId;
+    this.providerName = providerName;
+    this.providerKind = providerKind;
+    this.model = model;
+    this.name = name;
+    this.reasoning = reasoning;
+  }
+
+  static fromRecord(rec: Record<string, Object>): ResolvedModelEntry {
+    return new ResolvedModelEntry(
+      JsonHelper.getNumber(rec, 'provider_id', 0),
+      JsonHelper.getString(rec, 'provider_name', ''),
+      JsonHelper.getString(rec, 'provider_kind', ''),
+      JsonHelper.getString(rec, 'model', ''),
+      JsonHelper.getString(rec, 'name', ''),
+      JsonHelper.getBool(rec, 'reasoning', false)
+    );
+  }
+
+  /** 模型引用（threads model_ref / agent default_model）："provider/model" */
+  ref(): string {
+    return `${this.providerName}/${this.model}`;
+  }
+
+  /** 显示名：name 缺失时回退 model id */
+  displayName(): string {
+    return this.name !== '' ? this.name : this.model;
+  }
+
+  static parseList(text: string): Array<ResolvedModelEntry> {
+    const result: Array<ResolvedModelEntry> = [];
+    const arr = JsonHelper.parseArray(text);
+    if (arr !== null) {
+      for (const rec of arr) {
+        result.push(ResolvedModelEntry.fromRecord(rec));
+      }
+      return result;
+    }
+    const obj = JsonHelper.parse(text);
+    const items = JsonHelper.getRecordArray(obj, 'models');
+    for (const rec of items) {
+      result.push(ResolvedModelEntry.fromRecord(rec));
+    }
+    return result;
+  }
+}
+
+/** Provider（GET /api/providers 或 /api/admin/providers 列表项） */
+export class ProviderModel {
+  readonly id: number;
+  readonly name: string;
+  readonly kind: string;
+  readonly baseUrl: string;
+  readonly enabled: boolean;
+  readonly note: string;
+  readonly streamUsage: boolean;
+  readonly modelCount: number;
+  readonly hasApiKey: boolean;
+
+  constructor(id: number, name: string, kind: string, baseUrl: string, enabled: boolean,
+    note: string, streamUsage: boolean, modelCount: number, hasApiKey: boolean) {
+    this.id = id;
+    this.name = name;
+    this.kind = kind;
+    this.baseUrl = baseUrl;
+    this.enabled = enabled;
+    this.note = note;
+    this.streamUsage = streamUsage;
+    this.modelCount = modelCount;
+    this.hasApiKey = hasApiKey;
+  }
+
+  static fromRecord(rec: Record<string, Object>): ProviderModel {
+    const apiKey: Object | undefined = rec['api_key'];
+    return new ProviderModel(
+      JsonHelper.getNumber(rec, 'id', 0),
+      JsonHelper.getString(rec, 'name', ''),
+      JsonHelper.getString(rec, 'kind', ''),
+      JsonHelper.getString(rec, 'base_url', ''),
+      JsonHelper.getBool(rec, 'enabled', false),
+      JsonHelper.getString(rec, 'note', ''),
+      JsonHelper.getBool(rec, 'stream_usage', false),
+      JsonHelper.getRecordArray(rec, 'models').length,
+      typeof apiKey === 'string' && apiKey !== ''
+    );
+  }
+
+  static parseList(text: string): Array<ProviderModel> {
+    const result: Array<ProviderModel> = [];
+    const arr = JsonHelper.parseArray(text);
+    if (arr !== null) {
+      for (const rec of arr) {
+        result.push(ProviderModel.fromRecord(rec));
+      }
+      return result;
+    }
+    const obj = JsonHelper.parse(text);
+    const items = JsonHelper.getRecordArray(obj, 'providers');
+    for (const rec of items) {
+      result.push(ProviderModel.fromRecord(rec));
+    }
+    return result;
+  }
+}
