@@ -2,14 +2,19 @@ import { HttpClient } from '../net/HttpClient';
 import {
   AgentPluginModel,
   ChannelModel,
+  ChannelPluginKindModel,
+  ConnectorCatalogEntry,
   ConnectorInstanceModel,
   CronJobModel,
+  CustomMcpServerModel,
   HitlSettings,
   KnowledgeBaseModel,
   KnowledgeCapability,
   KnowledgeDocModel,
   MbtiTypeModel,
-  MobileCapability
+  MobileCapability,
+  QrPollResult,
+  QrSessionModel
 } from '../model/WorkspaceModels';
 import { JsonHelper } from '../utils/JsonHelper';
 
@@ -186,37 +191,266 @@ export class DocPreview {
   }
 }
 
-/** 渠道（/api/agents/{id}/channels） */
+/** 渠道（/api/agents/{id}/channels + /api/channels/plugin-kinds + 扫码辅助） */
 export class ChannelService {
   static async list(agentId: string): Promise<Array<ChannelModel>> {
     const text: string = await HttpClient.getInstance().get(`/api/agents/${agentId}/channels`);
     return ChannelModel.parseList(text);
   }
 
+  /** 插件贡献的渠道类型 */
+  static async pluginKinds(): Promise<Array<ChannelPluginKindModel>> {
+    const text: string = await HttpClient.getInstance().get('/api/channels/plugin-kinds');
+    return ChannelPluginKindModel.parseList(text);
+  }
+
+  /** 创建渠道：{kind, name, config} */
+  static async create(agentId: string, kind: string, name: string,
+    configStr: string): Promise<void> {
+    const config: Record<string, Object> | null = JsonHelper.parse(configStr);
+    const emptyConfig: Record<string, Object> = {};
+    const body: Record<string, Object> = {
+      'kind': kind,
+      'name': name,
+      'config': config === null ? emptyConfig : config
+    };
+    await HttpClient.getInstance().post(
+      `/api/agents/${agentId}/channels`, JSON.stringify(body));
+  }
+
+  /** 详情原始响应（含 config），用于展示 */
+  static async getChannel(agentId: string, channelId: string): Promise<string> {
+    return await HttpClient.getInstance().get(`/api/agents/${agentId}/channels/${channelId}`);
+  }
+
+  static async patchChannel(agentId: string, channelId: string, bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().patch(`/api/agents/${agentId}/channels/${channelId}`, bodyStr);
+  }
+
   static async setEnabled(agentId: string, channelId: string, enabled: boolean): Promise<void> {
     const body: Record<string, Object> = { 'enabled': enabled };
-    await HttpClient.getInstance().patch(
-      `/api/agents/${agentId}/channels/${channelId}`, JSON.stringify(body));
+    await ChannelService.patchChannel(agentId, channelId, JSON.stringify(body));
+  }
+
+  /** 用已存配置探测连通性，返回原始响应文本 */
+  static async testChannel(agentId: string, channelId: string): Promise<string> {
+    return await HttpClient.getInstance().post(
+      `/api/agents/${agentId}/channels/${channelId}/test`, '{}');
+  }
+
+  /** 用草稿配置探测（不落库），返回原始响应文本 */
+  static async probe(agentId: string, kind: string, configStr: string): Promise<string> {
+    const config: Record<string, Object> | null = JsonHelper.parse(configStr);
+    const emptyConfig: Record<string, Object> = {};
+    const body: Record<string, Object> = {
+      'kind': kind,
+      'config': config === null ? emptyConfig : config
+    };
+    return await HttpClient.getInstance().post(
+      `/api/agents/${agentId}/channels/probe`, JSON.stringify(body));
   }
 
   static async remove(agentId: string, channelId: string): Promise<void> {
     await HttpClient.getInstance().delete(`/api/agents/${agentId}/channels/${channelId}`);
   }
+
+  // ---- 扫码/机器人创建辅助（agent owner，channels 权限）----
+
+  /** 钉钉扫码：generate → {registration_id, qrcode_url, user_code...} */
+  static async dingtalkQrcodeGenerate(agentId: string): Promise<QrSessionModel> {
+    const text: string = await HttpClient.getInstance().post(
+      `/api/agents/${agentId}/channels/dingtalk/qrcode/generate`, '{}');
+    return QrSessionModel.parse(text);
+  }
+
+  static async dingtalkQrcodePoll(agentId: string, registrationId: string): Promise<QrPollResult> {
+    const body: Record<string, Object> = { 'registration_id': registrationId };
+    const text: string = await HttpClient.getInstance().postLongPoll(
+      `/api/agents/${agentId}/channels/dingtalk/qrcode/poll`, JSON.stringify(body), 50000);
+    return QrPollResult.parse(text);
+  }
+
+  /** 企微扫码：generate → {scode, qrcode_url...}；poll Body {"scode"} */
+  static async wecomQrcodeGenerate(agentId: string): Promise<QrSessionModel> {
+    const text: string = await HttpClient.getInstance().post(
+      `/api/agents/${agentId}/channels/wecom/qrcode/generate`, '{}');
+    return QrSessionModel.parse(text);
+  }
+
+  static async wecomQrcodePoll(agentId: string, scode: string): Promise<QrPollResult> {
+    const body: Record<string, Object> = { 'scode': scode };
+    const text: string = await HttpClient.getInstance().postLongPoll(
+      `/api/agents/${agentId}/channels/wecom/qrcode/poll`, JSON.stringify(body), 50000);
+    return QrPollResult.parse(text);
+  }
+
+  /** QQ Bot：generate → {qrcode_token, qrcode_url}；poll Body {"qrcode_token"} */
+  static async qqQrcodeGenerate(agentId: string): Promise<QrSessionModel> {
+    const text: string = await HttpClient.getInstance().post(
+      `/api/agents/${agentId}/channels/qq/qrcode/generate`, '{}');
+    return QrSessionModel.parse(text);
+  }
+
+  static async qqQrcodePoll(agentId: string, qrcodeToken: string): Promise<QrPollResult> {
+    const body: Record<string, Object> = { 'qrcode_token': qrcodeToken };
+    const text: string = await HttpClient.getInstance().postLongPoll(
+      `/api/agents/${agentId}/channels/qq/qrcode/poll`, JSON.stringify(body), 50000);
+    return QrPollResult.parse(text);
+  }
+
+  /** 微信：generate → {qrcode_token, qrcode_url}；poll 长轮询 ~40s */
+  static async weixinQrcodeGenerate(agentId: string): Promise<QrSessionModel> {
+    const text: string = await HttpClient.getInstance().post(
+      `/api/agents/${agentId}/channels/weixin/qrcode/generate`, '{}');
+    return QrSessionModel.parse(text);
+  }
+
+  static async weixinQrcodePoll(agentId: string, qrcodeToken: string): Promise<QrPollResult> {
+    const body: Record<string, Object> = { 'qrcode_token': qrcodeToken };
+    const text: string = await HttpClient.getInstance().postLongPoll(
+      `/api/agents/${agentId}/channels/weixin/qrcode/poll`, JSON.stringify(body), 50000);
+    return QrPollResult.parse(text);
+  }
+
+  /** 飞书机器人创建：start|poll|stop */
+  static async feishuBotStart(agentId: string): Promise<QrSessionModel> {
+    const text: string = await HttpClient.getInstance().post(
+      `/api/agents/${agentId}/channels/feishu/bot-creator/start`, '{}');
+    return QrSessionModel.parse(text);
+  }
+
+  static async feishuBotPoll(agentId: string): Promise<QrPollResult> {
+    const text: string = await HttpClient.getInstance().postLongPoll(
+      `/api/agents/${agentId}/channels/feishu/bot-creator/poll`, '{}', 50000);
+    return QrPollResult.parse(text);
+  }
+
+  static async feishuBotStop(agentId: string): Promise<void> {
+    await HttpClient.getInstance().post(
+      `/api/agents/${agentId}/channels/feishu/bot-creator/stop`, '{}');
+  }
+
+  /** 元宝机器人创建：start|poll|stop */
+  static async yuanbaoBotStart(agentId: string): Promise<QrSessionModel> {
+    const text: string = await HttpClient.getInstance().post(
+      `/api/agents/${agentId}/channels/yuanbao/bot-creator/start`, '{}');
+    return QrSessionModel.parse(text);
+  }
+
+  static async yuanbaoBotPoll(agentId: string): Promise<QrPollResult> {
+    const text: string = await HttpClient.getInstance().postLongPoll(
+      `/api/agents/${agentId}/channels/yuanbao/bot-creator/poll`, '{}', 50000);
+    return QrPollResult.parse(text);
+  }
+
+  static async yuanbaoBotStop(agentId: string): Promise<void> {
+    await HttpClient.getInstance().post(
+      `/api/agents/${agentId}/channels/yuanbao/bot-creator/stop`, '{}');
+  }
 }
 
-/** 连接器实例（/api/connector-instances） */
+/** 连接器实例（/api/connector-instances + /api/connectors） */
 export class ConnectorService {
   static async list(): Promise<Array<ConnectorInstanceModel>> {
     const text: string = await HttpClient.getInstance().get('/api/connector-instances');
     return ConnectorInstanceModel.parseList(text);
   }
 
+  /** 连接器目录（kind/可用性/OAuth 配置） */
+  static async catalog(): Promise<Array<ConnectorCatalogEntry>> {
+    const text: string = await HttpClient.getInstance().get('/api/connectors/catalog');
+    return ConnectorCatalogEntry.parseList(text);
+  }
+
+  /** 创建实例（bodyStr 为 CreateInstanceBody JSON 文本） */
+  static async createInstance(bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().post('/api/connector-instances', bodyStr);
+  }
+
+  /** 详情原始响应（含 config 与 credentials 脱敏预览） */
+  static async getInstance(instanceId: string): Promise<string> {
+    return await HttpClient.getInstance().get(`/api/connector-instances/${instanceId}`);
+  }
+
+  static async patchInstance(instanceId: string, bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().patch(`/api/connector-instances/${instanceId}`, bodyStr);
+  }
+
   static async test(instanceId: string): Promise<void> {
     await HttpClient.getInstance().post(`/api/connector-instances/${instanceId}/test`, '{}');
   }
 
+  /** 刷新 OAuth token，返回原始响应（{"ok":true,"expires_at":...}） */
+  static async refreshToken(instanceId: string): Promise<string> {
+    return await HttpClient.getInstance().post(
+      `/api/connector-instances/${instanceId}/refresh`, '{}');
+  }
+
+  /** 创建前试凭证（不落库） */
+  static async testCredentials(kind: string, credentialsStr: string): Promise<void> {
+    const credentials: Record<string, Object> | null = JsonHelper.parse(credentialsStr);
+    const emptyCredentials: Record<string, Object> = {};
+    const body: Record<string, Object> = {
+      'kind': kind,
+      'credentials': credentials === null ? emptyCredentials : credentials
+    };
+    await HttpClient.getInstance().post(
+      '/api/connectors/test-credentials', JSON.stringify(body));
+  }
+
+  /** 自定义 MCP 服务器列表 */
+  static async customMcpGet(): Promise<Array<CustomMcpServerModel>> {
+    const text: string = await HttpClient.getInstance().get('/api/connectors/custom-mcp');
+    return CustomMcpServerModel.parseList(text);
+  }
+
+  /** 单个自定义 MCP 服务器开关 */
+  static async customMcpPatchServer(serverName: string, bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().patch(
+      `/api/connectors/custom-mcp/servers/${serverName}`, bodyStr);
+  }
+
+  /** OAuth 发起：target 为 {"type":"catalog","kind":...} JSON 文本 → {authorize_url, state_id} */
+  static async oauthStart(targetStr: string): Promise<OAuthStartResult> {
+    const target: Record<string, Object> | null = JsonHelper.parse(targetStr);
+    const emptyTarget: Record<string, Object> = {};
+    const body: Record<string, Object> = {
+      'target': target === null ? emptyTarget : target
+    };
+    const text: string = await HttpClient.getInstance().post(
+      '/api/connectors/oauth/start', JSON.stringify(body));
+    return OAuthStartResult.parse(text);
+  }
+
+  /** OAuth 轮询（一次性读取）→ {kind, tokens, applied?}，返回原始文本 */
+  static async oauthPending(stateId: string): Promise<string> {
+    return await HttpClient.getInstance().get(`/api/connectors/oauth/pending/${stateId}`);
+  }
+
   static async remove(instanceId: string): Promise<void> {
     await HttpClient.getInstance().delete(`/api/connector-instances/${instanceId}`);
+  }
+}
+
+/** OAuth 发起结果 */
+export class OAuthStartResult {
+  readonly authorizeUrl: string;
+  readonly stateId: string;
+
+  constructor(authorizeUrl: string, stateId: string) {
+    this.authorizeUrl = authorizeUrl;
+    this.stateId = stateId;
+  }
+
+  static parse(text: string): OAuthStartResult {
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return new OAuthStartResult('', '');
+    }
+    return new OAuthStartResult(
+      JsonHelper.getString(rec, 'authorize_url', ''),
+      JsonHelper.getString(rec, 'state_id', '')
+    );
   }
 }
 

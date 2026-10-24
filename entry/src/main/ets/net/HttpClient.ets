@@ -72,6 +72,49 @@ export class HttpClient {
     return await this.request(path, http.RequestMethod.POST, bodyStr, extraHeaders);
   }
 
+  /** 长轮询 POST（readTimeout 放宽，如扫码轮询 ~40s） */
+  async postLongPoll(path: string, bodyStr: string | null, timeoutMs: number): Promise<string> {
+    if (this.baseUrl === '') {
+      throw new OctopApiError('服务器地址未配置', 0, 'NO_SERVER');
+    }
+    const client = http.createHttp();
+    try {
+      const header: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+      if (this.token !== '') {
+        header['Authorization'] = `Bearer ${this.token}`;
+      }
+      const options: http.HttpRequestOptions = {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: bodyStr === null ? undefined : bodyStr,
+        expectDataType: http.HttpDataType.STRING,
+        connectTimeout: 10000,
+        readTimeout: timeoutMs,
+        usingCache: false
+      };
+      const resp: http.HttpResponse = await client.request(`${this.baseUrl}${path}`, options);
+      this.maybeRenewToken(resp.header);
+      const status: number = resp.responseCode;
+      const body: string = typeof resp.result === 'string' ? resp.result : '';
+      if (status >= 200 && status < 300) {
+        return body;
+      }
+      throw HttpClient.buildApiError(status, body, path, this.token);
+    } catch (e) {
+      if (e instanceof OctopApiError) {
+        throw e;
+      }
+      const err = e as BusinessError;
+      Log.error(`HTTP POST(long) ${path} failed: ${err.code} ${err.message}`);
+      throw new OctopApiError('无法连接服务器，请检查网络与地址', 0, 'NETWORK_ERROR');
+    } finally {
+      client.destroy();
+    }
+  }
+
   async patch(path: string, bodyStr: string | null, extraHeaders?: Record<string, string>): Promise<string> {
     return await this.request(path, http.RequestMethod.PATCH, bodyStr, extraHeaders);
   }

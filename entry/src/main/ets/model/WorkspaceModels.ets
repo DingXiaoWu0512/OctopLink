@@ -251,20 +251,24 @@ export class ChannelModel {
   readonly kind: string;
   readonly name: string;
   readonly enabled: boolean;
+  readonly runtime: string;
 
-  constructor(id: string, kind: string, name: string, enabled: boolean) {
+  constructor(id: string, kind: string, name: string, enabled: boolean, runtime: string) {
     this.id = id;
     this.kind = kind;
     this.name = name;
     this.enabled = enabled;
+    this.runtime = runtime;
   }
 
   static fromRecord(rec: Record<string, Object>): ChannelModel {
     return new ChannelModel(
-      JsonHelper.getString(rec, 'id', ''),
+      JsonHelper.getString(rec, 'id', '') !== '' ? JsonHelper.getString(rec, 'id', '') :
+        JsonHelper.getString(rec, 'channel_id', ''),
       JsonHelper.getString(rec, 'kind', ''),
       JsonHelper.getString(rec, 'name', ''),
-      JsonHelper.getBool(rec, 'enabled', true)
+      JsonHelper.getBool(rec, 'enabled', true),
+      JsonHelper.getString(rec, 'runtime', '')
     );
   }
 
@@ -281,6 +285,194 @@ export class ChannelModel {
     const items = JsonHelper.getRecordArray(obj, 'channels');
     for (const rec of items) {
       result.push(ChannelModel.fromRecord(rec));
+    }
+    return result;
+  }
+}
+
+/** 插件贡献的渠道类型（GET /api/channels/plugin-kinds） */
+export class ChannelPluginKindModel {
+  readonly kind: string;
+  readonly label: string;
+  readonly pluginId: string;
+
+  constructor(kind: string, label: string, pluginId: string) {
+    this.kind = kind;
+    this.label = label;
+    this.pluginId = pluginId;
+  }
+
+  static parseList(text: string): Array<ChannelPluginKindModel> {
+    const result: Array<ChannelPluginKindModel> = [];
+    const arr = JsonHelper.parseArray(text);
+    if (arr !== null) {
+      for (const rec of arr) {
+        result.push(new ChannelPluginKindModel(
+          JsonHelper.getString(rec, 'kind', ''),
+          JsonHelper.getString(rec, 'label', ''),
+          JsonHelper.getString(rec, 'plugin_id', '')
+        ));
+      }
+    }
+    return result;
+  }
+}
+
+/** 扫码会话（generate 响应的容错解析：registration_id/scode/qrcode_token 三态） */
+export class QrSessionModel {
+  readonly token: string;
+  readonly qrcodeUrl: string;
+  readonly userCode: string;
+
+  constructor(token: string, qrcodeUrl: string, userCode: string) {
+    this.token = token;
+    this.qrcodeUrl = qrcodeUrl;
+    this.userCode = userCode;
+  }
+
+  static parse(text: string): QrSessionModel {
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return new QrSessionModel('', '', '');
+    }
+    let token: string = JsonHelper.getString(rec, 'registration_id', '');
+    if (token === '') {
+      token = JsonHelper.getString(rec, 'scode', '');
+    }
+    if (token === '') {
+      token = JsonHelper.getString(rec, 'qrcode_token', '');
+    }
+    return new QrSessionModel(
+      token,
+      JsonHelper.getString(rec, 'qrcode_url', ''),
+      JsonHelper.getString(rec, 'user_code', '')
+    );
+  }
+}
+
+/** 扫码轮询结果（waiting|expired|failed|success / wait|error） */
+export class QrPollResult {
+  readonly status: string;
+  readonly channelId: string;
+  readonly message: string;
+
+  constructor(status: string, channelId: string, message: string) {
+    this.status = status;
+    this.channelId = channelId;
+    this.message = message;
+  }
+
+  static parse(text: string): QrPollResult {
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return new QrPollResult('error', '', '响应格式错误');
+    }
+    let status: string = JsonHelper.getString(rec, 'status', '');
+    if (status === 'wait') {
+      status = 'waiting';
+    }
+    if (status === 'error') {
+      status = 'failed';
+    }
+    return new QrPollResult(
+      status,
+      JsonHelper.getString(rec, 'channel_id', ''),
+      JsonHelper.getString(rec, 'message', '')
+    );
+  }
+}
+
+/** 连接器目录项（GET /api/connectors/catalog，字段容错） */
+export class ConnectorCatalogEntry {
+  readonly kind: string;
+  readonly label: string;
+  readonly description: string;
+  readonly available: boolean;
+  readonly oauthConfigured: boolean;
+  readonly authKind: string;
+
+  constructor(kind: string, label: string, description: string, available: boolean,
+    oauthConfigured: boolean, authKind: string) {
+    this.kind = kind;
+    this.label = label;
+    this.description = description;
+    this.available = available;
+    this.oauthConfigured = oauthConfigured;
+    this.authKind = authKind;
+  }
+
+  static fromRecord(rec: Record<string, Object>): ConnectorCatalogEntry {
+    const label: string = JsonHelper.getString(rec, 'label', '') !== '' ?
+      JsonHelper.getString(rec, 'label', '') : JsonHelper.getString(rec, 'name', '');
+    return new ConnectorCatalogEntry(
+      JsonHelper.getString(rec, 'kind', ''),
+      label,
+      JsonHelper.getString(rec, 'description', ''),
+      JsonHelper.getBool(rec, 'available', true),
+      JsonHelper.getBool(rec, 'oauth_configured', false),
+      JsonHelper.getString(rec, 'auth_kind', '')
+    );
+  }
+
+  static parseList(text: string): Array<ConnectorCatalogEntry> {
+    const result: Array<ConnectorCatalogEntry> = [];
+    const arr = JsonHelper.parseArray(text);
+    if (arr !== null) {
+      for (const rec of arr) {
+        result.push(ConnectorCatalogEntry.fromRecord(rec));
+      }
+      return result;
+    }
+    const obj = JsonHelper.parse(text);
+    const items: Array<Record<string, Object>> = JsonHelper.getRecordArray(obj, 'catalog');
+    for (const rec of items) {
+      result.push(ConnectorCatalogEntry.fromRecord(rec));
+    }
+    const items2: Array<Record<string, Object>> = JsonHelper.getRecordArray(obj, 'connectors');
+    for (const rec of items2) {
+      result.push(ConnectorCatalogEntry.fromRecord(rec));
+    }
+    return result;
+  }
+}
+
+/** 自定义 MCP 服务器（GET /api/connectors/custom-mcp 的 servers 展开项） */
+export class CustomMcpServerModel {
+  readonly name: string;
+  readonly enabled: boolean;
+  readonly defaultOpen: boolean;
+  readonly shared: boolean;
+
+  constructor(name: string, enabled: boolean, defaultOpen: boolean, shared: boolean) {
+    this.name = name;
+    this.enabled = enabled;
+    this.defaultOpen = defaultOpen;
+    this.shared = shared;
+  }
+
+  static parseList(text: string): Array<CustomMcpServerModel> {
+    const result: Array<CustomMcpServerModel> = [];
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return result;
+    }
+    const servers: Record<string, Object> | null = JsonHelper.getRecord(rec, 'servers');
+    if (servers === null) {
+      return result;
+    }
+    const names: Array<string> = Object.keys(servers);
+    for (const name of names) {
+      const spec: Object | undefined = servers[name];
+      if (spec === undefined || spec === null || typeof spec !== 'object') {
+        continue;
+      }
+      const specRec: Record<string, Object> = spec as Record<string, Object>;
+      result.push(new CustomMcpServerModel(
+        name,
+        JsonHelper.getBool(specRec, 'enabled', true),
+        JsonHelper.getBool(specRec, 'default_open', false),
+        JsonHelper.getBool(specRec, 'shared', false)
+      ));
     }
     return result;
   }
