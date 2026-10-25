@@ -274,11 +274,6 @@ export struct ChatHomeTab {
       this.refreshContextUsage();
       if (result.messages.length === 0) {
         this.loadWelcome();
-      } else {
-        // 延迟到列表布局完成后定位，避免 scrollToIndex 因内容未渲染而失效
-        setTimeout((): void => {
-          this.jumpToLatest();
-        }, 100);
       }
     } catch (e) {
       this.loadError = e instanceof OctopApiError ? e.message : '历史消息加载失败';
@@ -670,16 +665,6 @@ export struct ChatHomeTab {
     this.scroller.scrollToIndex(this.messages.length - 1, false);
   }
 
-  /** 打开会话后定位到最新一条消息（含"加载更早"占位与 HITL 卡片偏移） */
-  private jumpToLatest(): void {
-    if (this.messages.length === 0) {
-      return;
-    }
-    const lead: number = this.historyHasMore ? 1 : 0;
-    const tail: number = this.hitlPending !== null ? 1 : 0;
-    this.scroller.scrollToIndex(lead + this.messages.length - 1 + tail, false, ScrollAlign.END);
-  }
-
   /** 首次发送前确保会话存在：无活跃会话则创建并写入全局状态 */
   private async ensureThread(): Promise<string> {
     const current: string = AppStorage.get<string>(SessionStore.KEY_ACTIVE_THREAD_ID) ?? '';
@@ -717,15 +702,6 @@ export struct ChatHomeTab {
     const text: string = this.inputText.trim();
     if (text === '') {
       return;
-    }
-    // 完整 "/命令" 输入直接执行命令，不发给模型
-    const slashQuery: string | null = this.slashQuery();
-    if (slashQuery !== null) {
-      const matches: Array<SlashCommand> = this.matchingSlashCommands();
-      if (matches.length === 1 && text.toLowerCase() === `/${matches[0].token}`) {
-        this.runSlashCommand(matches[0]);
-        return;
-      }
     }
     if (this.streaming) {
       await this.sendSteer(text);
@@ -1039,22 +1015,29 @@ export struct ChatHomeTab {
     this.polishing = false;
   }
 
-  /** 斜杠查询：输入以 "/" 开头时返回其后的过滤词，否则 null */
+  /** 斜杠查询：输入以 "/" 开头时返回命令词（空格前的部分，支持 "/命令 参数"），否则 null */
   private slashQuery(): string | null {
     const text: string = this.inputText;
     if (!text.startsWith('/')) {
       return null;
     }
-    return text.substring(1).trim().toLowerCase();
+    let head: string = text.substring(1);
+    const spIdx: number = head.indexOf(' ');
+    if (spIdx >= 0) {
+      head = head.substring(0, spIdx);
+    }
+    return head.trim().toLowerCase();
   }
 
+  /** 原生斜杠命令（由服务端 agent 解析执行，作为消息发送） */
   private slashCommands(): Array<SlashCommand> {
     return [
-      new SlashCommand('new', '新对话', '结束当前回复，开始新对话', $r('sys.symbol.square_and_pencil')),
-      new SlashCommand('sessions', '会话列表', '查看全部历史会话', $r('sys.symbol.timer')),
-      new SlashCommand('workspace', '工作台', '打开工作台', $r('sys.symbol.square_grid_2x2')),
-      new SlashCommand('settings', '设置', '打开服务器设置', $r('sys.symbol.gearshape')),
-      new SlashCommand('model', '切换模型', '选择本轮回复使用的模型', $r('sys.symbol.robot'))
+      new SlashCommand('model', '切换模型', '切换当前对话使用的模型', $r('sys.symbol.robot')),
+      new SlashCommand('compact', '压缩上下文', '压缩当前会话上下文', $r('sys.symbol.square_grid_2x2')),
+      new SlashCommand('usage', 'Token 用量', '查看上下文与 Token 用量', $r('sys.symbol.clock')),
+      new SlashCommand('skills', '技能', '查看当前可用技能列表', $r('sys.symbol.wand_and_stars')),
+      new SlashCommand('sessions', '会话管理', '查看与管理当前会话', $r('sys.symbol.timer')),
+      new SlashCommand('system', '系统', '查看系统状态信息', $r('sys.symbol.gearshape'))
     ];
   }
 
@@ -1073,71 +1056,56 @@ export struct ChatHomeTab {
     return result;
   }
 
-  /** 执行斜杠命令并清空输入 */
+  /** 选中命令：补全到输入框，可继续补参数后发送给专家执行 */
   private runSlashCommand(cmd: SlashCommand): void {
-    this.inputText = '';
-    if (cmd.token === 'new') {
-      this.startNewConversation();
-      return;
-    }
-    if (cmd.token === 'sessions') {
-      this.navStack.pushPath(new NavPathInfo('sessions', null));
-      return;
-    }
-    if (cmd.token === 'workspace') {
-      AppStorage.setOrCreate(SessionStore.KEY_MAIN_TAB, 2);
-      return;
-    }
-    if (cmd.token === 'settings') {
-      this.navStack.pushPath(new NavPathInfo('settings', null));
-      return;
-    }
-    if (cmd.token === 'model') {
-      this.modelSheetOpen = true;
-      return;
-    }
+    this.inputText = `/${cmd.token} `;
   }
 
   /** 斜杠命令候选面板（输入 "/" 时展示在输入框上方） */
   @Builder
   private slashPanelBuilder() {
-    Column() {
-      ForEach(this.matchingSlashCommands(), (cmd: SlashCommand) => {
-        Row({ space: 10 }) {
-          Column() {
-            SymbolGlyph(cmd.icon)
-              .fontSize(15)
-              .fontColor([$r('app.color.brand')])
-          }
-          .width(28)
-          .height(28)
-          .borderRadius(9)
-          .backgroundColor($r('app.color.brand_light'))
-          .justifyContent(FlexAlign.Center)
-          Column({ space: 1 }) {
-            Text(cmd.label)
-              .fontSize(14)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
-            Text(cmd.description)
+    Scroll() {
+      Column() {
+        ForEach(this.matchingSlashCommands(), (cmd: SlashCommand) => {
+          Row({ space: 10 }) {
+            Column() {
+              SymbolGlyph(cmd.icon)
+                .fontSize(15)
+                .fontColor([$r('app.color.brand')])
+            }
+            .width(28)
+            .height(28)
+            .borderRadius(9)
+            .backgroundColor($r('app.color.brand_light'))
+            .justifyContent(FlexAlign.Center)
+            Column({ space: 1 }) {
+              Text(cmd.label)
+                .fontSize(14)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.text_primary'))
+              Text(cmd.description)
+                .fontSize(11)
+                .fontColor($r('app.color.text_tertiary'))
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+            Text(`/${cmd.token}`)
               .fontSize(11)
               .fontColor($r('app.color.text_tertiary'))
+              .fontFamily('monospace')
           }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
-          Text(`/${cmd.token}`)
-            .fontSize(11)
-            .fontColor($r('app.color.text_tertiary'))
-            .fontFamily('monospace')
-        }
-        .width('100%')
-        .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-        .borderRadius(12)
-        .onClick((): void => {
-          this.runSlashCommand(cmd);
-        })
-      }, (cmd: SlashCommand) => cmd.token)
+          .width('100%')
+          .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+          .borderRadius(12)
+          .onClick((): void => {
+            this.runSlashCommand(cmd);
+          })
+        }, (cmd: SlashCommand) => cmd.token)
+      }
+      .width('100%')
     }
+    .constraintSize({ maxHeight: 280 })
+    .scrollBar(BarState.Off)
     .width('100%')
     .padding(6)
     .borderRadius(18)
@@ -1848,6 +1816,8 @@ export struct ChatHomeTab {
           .height('100%')
           .padding({ left: 14, right: 14, top: 6, bottom: 6 })
           .scrollBar(BarState.Off)
+          // 从底部开始布局：打开会话直接显示最新消息（无延迟滚动闪烁），键盘弹出压缩视口时消息仍锚定底部
+          .stackFromEnd(this.messages.length > 0)
 
         }
         .layoutWeight(1)
