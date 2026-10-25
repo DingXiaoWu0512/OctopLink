@@ -19,6 +19,8 @@ export struct CommandPalette {
   };
   onOpenSettings: () => void = (): void => {
   };
+  onOpenSessions: () => void = (): void => {
+  };
   @State query: string = '';
   @State threads: Array<ThreadModel> = [];
   @State agents: Array<AgentModel> = [];
@@ -102,12 +104,12 @@ export struct CommandPalette {
   }
 
   private gotoSessions(): void {
-    AppStorage.setOrCreate(SessionStore.KEY_MAIN_TAB, 2);
+    this.onOpenSessions();
     this.onClose();
   }
 
   private gotoWorkspace(): void {
-    AppStorage.setOrCreate(SessionStore.KEY_MAIN_TAB, 3);
+    AppStorage.setOrCreate(SessionStore.KEY_MAIN_TAB, 2);
     this.onClose();
   }
 

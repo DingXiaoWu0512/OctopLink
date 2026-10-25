@@ -954,6 +954,77 @@ export class MobileCapability {
   }
 }
 
+/** 验证码 Provider 配置（GET /api/settings/captcha → providers{kind}，不含 secret 明文） */
+export class CaptchaProviderModel {
+  readonly siteKey: string;
+  readonly hasSecret: boolean;
+  readonly camSecretId: string;
+  readonly camSecret: string;
+
+  constructor(siteKey: string, hasSecret: boolean, camSecretId: string, camSecret: string) {
+    this.siteKey = siteKey;
+    this.hasSecret = hasSecret;
+    this.camSecretId = camSecretId;
+    this.camSecret = camSecret;
+  }
+
+  static fromRecord(rec: Record<string, Object>): CaptchaProviderModel {
+    return new CaptchaProviderModel(
+      JsonHelper.getString(rec, 'site_key', ''),
+      JsonHelper.getBool(rec, 'has_secret', false),
+      JsonHelper.getString(rec, 'cam_secret_id', ''),
+      JsonHelper.getString(rec, 'cam_secret', '')
+    );
+  }
+}
+
+/** 验证码 Provider 条目（kind + 配置） */
+export class CaptchaProviderEntry {
+  readonly kind: string;
+  readonly provider: CaptchaProviderModel;
+
+  constructor(kind: string, provider: CaptchaProviderModel) {
+    this.kind = kind;
+    this.provider = provider;
+  }
+}
+
+/** 验证码设置（GET /api/settings/captcha，需 captcha 权限） */
+export class CaptchaSettingsModel {
+  readonly active: string;
+  readonly available: Array<string>;
+  readonly providers: Array<CaptchaProviderEntry>;
+  readonly source: string;
+  readonly v3MinScore: number;
+
+  constructor(active: string, available: Array<string>, providers: Array<CaptchaProviderEntry>,
+    source: string, v3MinScore: number) {
+    this.active = active;
+    this.available = available;
+    this.providers = providers;
+    this.source = source;
+    this.v3MinScore = v3MinScore;
+  }
+
+  static fromRecord(rec: Record<string, Object>): CaptchaSettingsModel {
+    const available: Array<string> = JsonHelper.getStringArray(rec, 'available');
+    const providersRec = JsonHelper.getRecord(rec, 'providers');
+    const providers: Array<CaptchaProviderEntry> = [];
+    for (const kind of available) {
+      const providerRec = JsonHelper.getRecord(providersRec, kind);
+      providers.push(new CaptchaProviderEntry(kind,
+        CaptchaProviderModel.fromRecord(providerRec === null ? {} : providerRec)));
+    }
+    return new CaptchaSettingsModel(
+      JsonHelper.getString(rec, 'active', ''),
+      available,
+      providers,
+      JsonHelper.getString(rec, 'source', ''),
+      JsonHelper.getOptionalNumber(rec, 'v3_min_score', 0)
+    );
+  }
+}
+
 /** 已解析可用模型（GET /api/providers/resolved 列表项，模型选择器数据源） */
 export class ResolvedModelEntry {
   readonly providerId: number;

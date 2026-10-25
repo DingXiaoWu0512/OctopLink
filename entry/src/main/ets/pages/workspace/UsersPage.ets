@@ -17,11 +17,8 @@ export struct UsersPage {
   @State operating: boolean = false;
   @State selectionMode: boolean = false;
   @State selectedIds: Array<number> = [];
-  @State createOpen: boolean = false;
-  @State editOpen: boolean = false;
-  @State resetOpen: boolean = false;
-  @State roleSheetOpen: boolean = false;
-  @State batchValueOpen: boolean = false;
+  @State sheetOpen: boolean = false;
+  @State sheetMode: string = '';
   // 创建表单
   @State cuUsername: string = '';
   @State cuPassword: string = '';
@@ -129,7 +126,8 @@ export struct UsersPage {
     this.cuEmail = '';
     this.cuQuota = '';
     this.cuMaxAgents = '';
-    this.createOpen = true;
+    this.sheetMode = 'create';
+    this.sheetOpen = true;
   }
 
   private static parseOptionalInt(text: string): number | null {
@@ -184,7 +182,7 @@ export struct UsersPage {
     }
     try {
       await UserService.create(JSON.stringify(body));
-      this.createOpen = false;
+      this.sheetOpen = false;
       this.getUIContext().getPromptAction().showToast({ message: '用户已创建' });
       await this.load();
     } catch (e) {
@@ -199,7 +197,8 @@ export struct UsersPage {
     this.edDisplayName = user.displayName === user.username ? '' : user.displayName;
     this.edRole = user.role;
     this.edEmail = user.email;
-    this.editOpen = true;
+    this.sheetMode = 'edit';
+    this.sheetOpen = true;
   }
 
   private async submitEdit(): Promise<void> {
@@ -218,7 +217,7 @@ export struct UsersPage {
     };
     try {
       await UserService.patch(this.editing.id, JSON.stringify(body));
-      this.editOpen = false;
+      this.sheetOpen = false;
       this.getUIContext().getPromptAction().showToast({ message: '已保存' });
       await this.load();
     } catch (e) {
@@ -231,7 +230,8 @@ export struct UsersPage {
   private openReset(user: UserAccountModel): void {
     this.resetTarget = user;
     this.resetText = '';
-    this.resetOpen = true;
+    this.sheetMode = 'reset';
+    this.sheetOpen = true;
   }
 
   private async submitReset(): Promise<void> {
@@ -246,7 +246,7 @@ export struct UsersPage {
     this.operating = true;
     try {
       await UserService.resetPassword(this.resetTarget.id, password);
-      this.resetOpen = false;
+      this.sheetOpen = false;
       this.getUIContext().getPromptAction().showToast({ message: '密码已重置' });
     } catch (e) {
       this.toastError(e, '重置失败');
@@ -369,7 +369,8 @@ export struct UsersPage {
           action: (): void => {
             this.batchAction = 'set_token_quota';
             this.batchText = '';
-            this.batchValueOpen = true;
+            this.sheetMode = 'batch';
+            this.sheetOpen = true;
           }
         },
         {
@@ -377,7 +378,8 @@ export struct UsersPage {
           action: (): void => {
             this.batchAction = 'set_max_agents';
             this.batchText = '';
-            this.batchValueOpen = true;
+            this.sheetMode = 'batch';
+            this.sheetOpen = true;
           }
         },
         {
@@ -438,7 +440,7 @@ export struct UsersPage {
       this.getUIContext().getPromptAction().showToast({ message: '请输入非负整数（留空为不限）' });
       return;
     }
-    this.batchValueOpen = false;
+    this.sheetOpen = false;
     this.runBatch(this.batchAction, parsed);
   }
 
@@ -447,7 +449,8 @@ export struct UsersPage {
     this.roleNameText = '';
     this.roleIdText = '';
     this.roleDescText = '';
-    this.roleSheetOpen = true;
+    this.sheetMode = 'role';
+    this.sheetOpen = true;
   }
 
   private openRoleEdit(role: UserRoleModel): void {
@@ -455,7 +458,8 @@ export struct UsersPage {
     this.roleNameText = role.name;
     this.roleIdText = role.id;
     this.roleDescText = role.description;
-    this.roleSheetOpen = true;
+    this.sheetMode = 'role';
+    this.sheetOpen = true;
   }
 
   private showRoleMenu(role: UserRoleModel): void {
@@ -506,7 +510,7 @@ export struct UsersPage {
         };
         await UserRoleService.patch(this.roleEditing.id, JSON.stringify(body));
       }
-      this.roleSheetOpen = false;
+      this.sheetOpen = false;
       this.getUIContext().getPromptAction().showToast({ message: this.roleEditing === null ? '角色已创建' : '角色已保存' });
       await this.load();
     } catch (e) {
@@ -817,25 +821,12 @@ export struct UsersPage {
             .onRefreshing((): void => {
               this.load();
             })
-            .bindSheet(this.createOpen, this.createBuilder(), {
+            .bindSheet($$this.sheetOpen, this.sheetSwitchBuilder, {
               detents: [SheetSize.LARGE],
-              showClose: true
-            })
-            .bindSheet(this.editOpen, this.editBuilder(), {
-              height: 460,
-              showClose: true
-            })
-            .bindSheet(this.resetOpen, this.resetBuilder(), {
-              height: 280,
-              showClose: true
-            })
-            .bindSheet(this.roleSheetOpen, this.roleBuilder(), {
-              height: 420,
-              showClose: true
-            })
-            .bindSheet(this.batchValueOpen, this.batchValueBuilder(), {
-              height: 280,
-              showClose: true
+              showClose: true,
+              onDisappear: (): void => {
+                this.sheetMode = '';
+              }
             })
           }
         }
@@ -908,6 +899,22 @@ export struct UsersPage {
     .onReady((ctx: NavDestinationContext): void => {
       this.onNavReady(ctx);
     })
+  }
+
+  /** 单 bindSheet 分发：create / edit / reset / role / batch */
+  @Builder
+  sheetSwitchBuilder() {
+    if (this.sheetMode === 'create') {
+      this.createBuilder()
+    } else if (this.sheetMode === 'edit') {
+      this.editBuilder()
+    } else if (this.sheetMode === 'reset') {
+      this.resetBuilder()
+    } else if (this.sheetMode === 'role') {
+      this.roleBuilder()
+    } else if (this.sheetMode === 'batch') {
+      this.batchValueBuilder()
+    }
   }
 
   @Builder

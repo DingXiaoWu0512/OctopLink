@@ -17,16 +17,15 @@ export struct ConnectorPage {
   @State refreshing: boolean = false;
   @State errorMsg: string = '';
   @State operating: boolean = false;
-  @State catalogSheetOpen: boolean = false;
+  @State sheetOpen: boolean = false;
+  @State sheetMode: string = '';
   @State catalogLoading: boolean = false;
   @State catalog: Array<ConnectorCatalogEntry> = [];
-  @State credSheetOpen: boolean = false;
   @State credEntry: ConnectorCatalogEntry | null = null;
   @State credName: string = '';
   @State credJson: string = '{}';
   @State credTesting: boolean = false;
   @State credCreating: boolean = false;
-  @State oauthSheetOpen: boolean = false;
   @State oauthEntry: ConnectorCatalogEntry | null = null;
   @State oauthUrl: string = '';
   @State oauthStateId: string = '';
@@ -64,7 +63,8 @@ export struct ConnectorPage {
   // ---- 目录与添加 ----
 
   private async openCatalog(): Promise<void> {
-    this.catalogSheetOpen = true;
+    this.sheetMode = 'catalog';
+    this.sheetOpen = true;
     this.catalogLoading = this.catalog.length === 0;
     try {
       this.catalog = await ConnectorService.catalog();
@@ -93,7 +93,8 @@ export struct ConnectorPage {
     this.credEntry = entry;
     this.credName = entry.label;
     this.credJson = '{}';
-    this.credSheetOpen = true;
+    this.sheetMode = 'cred';
+    this.sheetOpen = true;
   }
 
   private validCredJson(): boolean {
@@ -144,7 +145,7 @@ export struct ConnectorPage {
         'config': emptyConfig
       };
       await ConnectorService.createInstance(JSON.stringify(body));
-      this.credSheetOpen = false;
+      this.sheetOpen = false;
       this.getUIContext().getPromptAction().showToast({ message: '连接器已创建' });
       this.load();
     } catch (e) {
@@ -162,7 +163,8 @@ export struct ConnectorPage {
     this.oauthStateId = '';
     this.oauthStatus = '正在发起授权…';
     this.oauthPolling = false;
-    this.oauthSheetOpen = true;
+    this.sheetMode = 'oauth';
+    this.sheetOpen = true;
     try {
       const target: Record<string, Object> = { 'type': 'catalog', 'kind': entry.kind };
       const result = await ConnectorService.oauthStart(JSON.stringify(target));
@@ -199,7 +201,7 @@ export struct ConnectorPage {
   }
 
   private async pollOauthOnce(stateId: string): Promise<void> {
-    if (!this.oauthPolling || !this.oauthSheetOpen || stateId !== this.oauthStateId) {
+    if (!this.oauthPolling || !this.sheetOpen || this.sheetMode !== 'oauth' || stateId !== this.oauthStateId) {
       return;
     }
     if (this.oauthTries > 100) {
@@ -227,7 +229,7 @@ export struct ConnectorPage {
         };
         await ConnectorService.createInstance(JSON.stringify(body));
         this.oauthPolling = false;
-        this.oauthSheetOpen = false;
+        this.sheetOpen = false;
         this.getUIContext().getPromptAction().showToast({ message: '授权成功，连接器已创建' });
         this.load();
         return;
@@ -381,6 +383,18 @@ export struct ConnectorPage {
       this.getUIContext().getPromptAction().showToast({ message });
     } finally {
       this.operating = false;
+    }
+  }
+
+  /** 单 bindSheet 分发：catalog / cred / oauth */
+  @Builder
+  private sheetSwitchBuilder() {
+    if (this.sheetMode === 'catalog') {
+      this.catalogSheetBuilder()
+    } else if (this.sheetMode === 'cred') {
+      this.credSheetBuilder()
+    } else if (this.sheetMode === 'oauth') {
+      this.oauthSheetBuilder()
     }
   }
 
@@ -797,18 +811,11 @@ export struct ConnectorPage {
         }
         .width('100%')
         .height('100%')
-        .bindSheet($$this.catalogSheetOpen, this.catalogSheetBuilder, {
+        .bindSheet($$this.sheetOpen, this.sheetSwitchBuilder, {
           detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-          showClose: true
-        })
-        .bindSheet($$this.credSheetOpen, this.credSheetBuilder, {
-          detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-          showClose: true
-        })
-        .bindSheet($$this.oauthSheetOpen, this.oauthSheetBuilder, {
-          height: 360,
           showClose: true,
           onDisappear: (): void => {
+            this.sheetMode = '';
             this.oauthPolling = false;
             this.oauthUrl = '';
             this.oauthStateId = '';

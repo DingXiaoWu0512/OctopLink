@@ -31,13 +31,12 @@ export struct KnowledgeDocsPage {
   @State uploadingCount: number = 0;
   @State maxDocs: number = 0;
   @State docCount: number = 0;
-  @State folderSheetOpen: boolean = false;
   @State folderPath: string = '';
-  @State renameSheetOpen: boolean = false;
   @State renameText: string = '';
-  @State editSheetOpen: boolean = false;
   @State editText: string = '';
   @State editSaving: boolean = false;
+  @State sheetOpen: boolean = false;
+  @State sheetMode: string = '';
   private kbId: string = '';
   private kbName: string = '';
   private createController: CustomDialogController | null = null;
@@ -134,7 +133,8 @@ export struct KnowledgeDocsPage {
           title: '新建文件夹',
           action: (): void => {
             this.folderPath = '';
-            this.folderSheetOpen = true;
+            this.sheetMode = 'folder';
+            this.sheetOpen = true;
           }
         }
       ]
@@ -323,7 +323,8 @@ export struct KnowledgeDocsPage {
       this.editText = await KnowledgeService.getDocContent(this.kbId, doc.id);
       this.editTargetId = doc.id;
       this.editTargetName = doc.filename;
-      this.editSheetOpen = true;
+      this.sheetMode = 'edit';
+      this.sheetOpen = true;
     } catch (e) {
       const message: string = e instanceof OctopApiError ? e.message : '内容加载失败';
       this.getUIContext().getPromptAction().showToast({ message });
@@ -338,7 +339,7 @@ export struct KnowledgeDocsPage {
     this.editSaving = true;
     try {
       await KnowledgeService.putDocContent(this.kbId, this.editTargetId, this.editText);
-      this.editSheetOpen = false;
+      this.sheetOpen = false;
       this.getUIContext().getPromptAction().showToast({ message: '内容已保存并重建索引' });
       this.load();
     } catch (e) {
@@ -351,7 +352,8 @@ export struct KnowledgeDocsPage {
   private openRename(doc: KnowledgeDocModel): void {
     this.renameTargetId = doc.id;
     this.renameText = doc.filename;
-    this.renameSheetOpen = true;
+    this.sheetMode = 'rename';
+    this.sheetOpen = true;
   }
 
   private async saveRename(): Promise<void> {
@@ -366,7 +368,7 @@ export struct KnowledgeDocsPage {
     this.operating = true;
     try {
       await KnowledgeService.renameDoc(this.kbId, this.renameTargetId, name);
-      this.renameSheetOpen = false;
+      this.sheetOpen = false;
       await this.load();
     } catch (e) {
       const message: string = e instanceof OctopApiError ? e.message : '重命名失败';
@@ -384,7 +386,7 @@ export struct KnowledgeDocsPage {
     this.operating = true;
     try {
       await KnowledgeService.createFolder(this.kbId, path);
-      this.folderSheetOpen = false;
+      this.sheetOpen = false;
       await this.load();
     } catch (e) {
       const message: string = e instanceof OctopApiError ? e.message : '创建失败';
@@ -466,6 +468,18 @@ export struct KnowledgeDocsPage {
       this.getUIContext().getPromptAction().showToast({ message });
     } finally {
       this.operating = false;
+    }
+  }
+
+  /** 单 bindSheet 分发：folder / rename / edit */
+  @Builder
+  private sheetSwitchBuilder() {
+    if (this.sheetMode === 'folder') {
+      this.folderSheetBuilder()
+    } else if (this.sheetMode === 'rename') {
+      this.renameSheetBuilder()
+    } else if (this.sheetMode === 'edit') {
+      this.editSheetBuilder()
     }
   }
 
@@ -732,16 +746,12 @@ export struct KnowledgeDocsPage {
         }
         .width('100%')
         .height('100%')
-        .bindSheet($$this.folderSheetOpen, this.folderSheetBuilder, {
-          height: 240,
-          showClose: true
-        })
-        .bindSheet($$this.renameSheetOpen, this.renameSheetBuilder, {
-          height: 240,
-          showClose: true
-        })
-        .bindSheet($$this.editSheetOpen, this.editSheetBuilder, {
-          detents: [SheetSize.MEDIUM, SheetSize.LARGE]
+        .bindSheet($$this.sheetOpen, this.sheetSwitchBuilder, {
+          detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+          showClose: true,
+          onDisappear: (): void => {
+            this.sheetMode = '';
+          }
         })
 
         if (this.uploadingCount > 0) {

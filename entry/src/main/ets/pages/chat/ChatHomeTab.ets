@@ -20,6 +20,7 @@ import { Log } from '../../utils/Logger';
 import { ThreadDigestCache } from '../../utils/ThreadDigestCache';
 import { util } from '@kit.ArkTS';
 import { fileIo, picker } from '@kit.CoreFileKit';
+import { window } from '@kit.ArkUI';
 
 /** HITL 动作展示视图（Builder ForEach 用稳定对象） */
 class HitlActionView {
@@ -73,10 +74,13 @@ export struct ChatHomeTab {
   @State loadingEarlier: boolean = false;
   @State hitlEditOpen: boolean = false;
   @State hitlEditArgs: string = '';
+  @State inputMaxWidth: number = 460;
   private controller: ChatStreamController | null = null;
   private connectingPromise: Promise<boolean> | null = null;
   private scroller: Scroller = new Scroller();
   private lastScrollMs: number = 0;
+  /** 切专家清空活跃线程时置位：onThreadChanged 转 loadRecentThread 而非欢迎态 */
+  private pendingRecentLoad: boolean = false;
   private activeAssistant: ChatMessageModel | null = null;
   private steerPending: ChatMessageModel | null = null;
   private currentTurnId: string = '';
@@ -87,6 +91,12 @@ export struct ChatHomeTab {
 
   aboutToAppear(): void {
     this.startBreathing();
+    window.getLastWindow(getContext(this)).then((win: window.Window): void => {
+      const wv: number = this.getUIContext().px2vp(win.getWindowProperties().windowRect.width);
+      this.inputMaxWidth = wv < 600 ? 320 : (wv < 840 ? 380 : 460);
+    }).catch((): void => {
+      Log.debug('window width load failed, keep default bar width');
+    });
     if (this.agentId === '') {
       this.pickDefaultAgent();
       return;
@@ -95,7 +105,7 @@ export struct ChatHomeTab {
       this.loadHistory();
       this.connectWs();
     } else {
-      this.loadWelcome();
+      this.loadRecentThread();
     }
   }
 
@@ -136,9 +146,10 @@ export struct ChatHomeTab {
       return;
     }
     if ((AppStorage.get<string>(SessionStore.KEY_ACTIVE_THREAD_ID) ?? '') !== '') {
+      this.pendingRecentLoad = true;
       AppStorage.setOrCreate(SessionStore.KEY_ACTIVE_THREAD_ID, '');
     } else {
-      this.loadWelcome();
+      this.loadRecentThread();
     }
   }
 
@@ -162,6 +173,11 @@ export struct ChatHomeTab {
     if (this.activeThreadId === '') {
       this.messages = [];
       this.historyReady = true;
+      if (this.pendingRecentLoad) {
+        this.pendingRecentLoad = false;
+        this.loadRecentThread();
+        return;
+      }
       this.loadWelcome();
       return;
     }
@@ -299,6 +315,24 @@ export struct ChatHomeTab {
     }).catch((): void => {
       // 静默失败：上下文条为辅助信息
     });
+  }
+
+  /** 无活跃线程时自动进入最近一条会话，无会话/失败回退欢迎态 */
+  private async loadRecentThread(): Promise<void> {
+    const agentId: string = AppStorage.get<string>(SessionStore.KEY_AGENT_ID) ?? '';
+    if (agentId === '') {
+      return;
+    }
+    try {
+      const threads: Array<ThreadModel> = await ThreadService.list(agentId, 1);
+      if (threads.length > 0) {
+        AppStorage.setOrCreate(SessionStore.KEY_ACTIVE_THREAD_ID, threads[0].threadId);
+        return;
+      }
+    } catch (e) {
+      Log.debug('recent thread load failed, fallback to welcome');
+    }
+    this.loadWelcome();
   }
 
   private async loadWelcome(): Promise<void> {
@@ -1470,6 +1504,10 @@ export struct ChatHomeTab {
       },
       onOpenSettings: (): void => {
         this.navStack.pushPath(new NavPathInfo('settings', null));
+      },
+      onOpenSessions: (): void => {
+        this.paletteOpen = false;
+        this.navStack.pushPath(new NavPathInfo('sessions', null));
       }
     })
   }
@@ -1553,7 +1591,7 @@ export struct ChatHomeTab {
         })
 
         Button({ type: ButtonType.Circle, stateEffect: true }) {
-          SymbolGlyph($r('sys.symbol.square_and_pencil'))
+          SymbolGlyph($r('sys.symbol.timer'))
             .fontSize(18)
             .fontColor([$r('app.color.icon_secondary')])
         }
@@ -1562,7 +1600,7 @@ export struct ChatHomeTab {
         .backgroundColor($r('app.color.bg_card'))
         .systemMaterial(UiMaterialKit.button())
         .onClick((): void => {
-          this.startNewConversation();
+          this.navStack.pushPath(new NavPathInfo('sessions', null));
         })
       }
       .width('100%')
@@ -1739,7 +1777,8 @@ export struct ChatHomeTab {
         .align(Alignment.Start)
       }
 
-      Column({ space: 4 }) {
+      Stack({ alignContent: Alignment.TopEnd }) {
+        Column({ space: 4 }) {
         TextArea({
           text: this.inputText,
           placeholder: this.streaming ? '可补充要求，与回复同时生效...' : $r('app.string.chat_input_placeholder')
@@ -1888,7 +1927,25 @@ export struct ChatHomeTab {
       .backgroundColor($r('app.color.bg_card'))
       .border({ width: 1, color: $r('app.color.card_stroke') })
       .shadow({ radius: 12, color: '#1205243F', offsetX: 0, offsetY: 4 })
+      .constraintSize({ maxWidth: this.inputMaxWidth })
       .margin({ left: 12, right: 12, top: 6, bottom: this.bottomPad + 10 })
+
+        Button({ type: ButtonType.Circle, stateEffect: true }) {
+          SymbolGlyph($r('sys.symbol.square_and_pencil'))
+            .fontSize(16)
+            .fontWeight(FontWeight.Medium)
+            .fontColor([$r('app.color.text_primary')])
+        }
+        .width(36)
+        .height(36)
+        .backgroundColor($r('app.color.bg_card'))
+        .border({ width: 1, color: $r('app.color.card_stroke') })
+        .systemMaterial(UiMaterialKit.button())
+        .offset({ x: -2, y: -44 })
+        .onClick((): void => {
+          this.startNewConversation();
+        })
+      }
     }
     .width('100%')
     .height('100%')

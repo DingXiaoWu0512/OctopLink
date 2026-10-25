@@ -1,6 +1,7 @@
 import { HttpClient } from '../net/HttpClient';
 import {
   AgentPluginModel,
+  CaptchaSettingsModel,
   ChannelModel,
   ChannelPluginKindModel,
   ConnectorCatalogEntry,
@@ -719,5 +720,17 @@ export class SettingsService {
     const rec = JsonHelper.parse(text);
     const mobile = JsonHelper.getRecord(rec, 'mobile');
     return MobileCapability.fromRecord(mobile === null ? {} : mobile);
+  }
+
+  /** 验证码设置（需 captcha 权限） */
+  static async getCaptcha(): Promise<CaptchaSettingsModel> {
+    const text: string = await HttpClient.getInstance().get('/api/settings/captcha');
+    const rec = JsonHelper.parse(text);
+    return CaptchaSettingsModel.fromRecord(rec === null ? {} : rec);
+  }
+
+  /** 更新验证码设置：{active?, providers?{kind:{site_key?, secret?, cam_secret_id?, cam_secret?}}} */
+  static async putCaptcha(body: string): Promise<void> {
+    await HttpClient.getInstance().put('/api/settings/captcha', body);
   }
 }

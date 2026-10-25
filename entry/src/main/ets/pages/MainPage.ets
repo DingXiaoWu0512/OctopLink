@@ -4,11 +4,10 @@ import { SessionStore } from '../store/SessionStore';
 import { UiMaterialKit } from '../components/UiMaterialKit';
 import { ExpertListPage } from './expert/ExpertListPage';
 import { ChatHomeTab } from './chat/ChatHomeTab';
-import { SessionsTab } from './chat/ChatTab';
 import { WorkspaceTab } from './workspace/WorkspaceTab';
 import { MeTab } from './me/MeTab';
 
-/** 主页：5-Tab + API 26 悬浮胶囊导航栏（barFloatingStyle + ImmersiveMaterial 沉浸材质光感） */
+/** 主页：4-Tab + API 26 悬浮胶囊导航栏（barFloatingStyle + ImmersiveMaterial 沉浸材质光感） */
 @Component
 export struct MainPage {
   @StorageLink(SessionStore.KEY_MAIN_TAB) mainTab: number = 0;
@@ -100,19 +99,14 @@ export struct MainPage {
       .tabBar(this.tabBarItem($r('sys.symbol.message'), $r('app.string.tab_chat'), 1))
 
       TabContent() {
-        SessionsTab({ topInset: this.topInset, bottomPad: this.contentBottomPad() })
-      }
-      .tabBar(this.tabBarItem($r('sys.symbol.timer'), $r('app.string.tab_sessions'), 2))
-
-      TabContent() {
         WorkspaceTab({ topInset: this.topInset, bottomPad: this.contentBottomPad() })
       }
-      .tabBar(this.tabBarItem($r('sys.symbol.square_grid_2x2'), $r('app.string.tab_workspace'), 3))
+      .tabBar(this.tabBarItem($r('sys.symbol.square_grid_2x2'), $r('app.string.tab_workspace'), 2))
 
       TabContent() {
         MeTab({ topInset: this.topInset, bottomPad: this.contentBottomPad() })
       }
-      .tabBar(this.tabBarItem($r('sys.symbol.person'), $r('app.string.tab_me'), 4))
+      .tabBar(this.tabBarItem($r('sys.symbol.person'), $r('app.string.tab_me'), 3))
     }
     .height('100%')
     .width('100%')

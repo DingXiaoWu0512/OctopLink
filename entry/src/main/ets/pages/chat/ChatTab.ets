@@ -36,6 +36,8 @@ export struct SessionsTab {
   @State operating: boolean = false;
   @Prop topInset: number = 0;
   @Prop bottomPad: number = 72;
+  /** 以独立页面（NavDestination）形式使用：隐藏内部大标题并返回时 pop */
+  @Prop asPage: boolean = false;
   private renameController: CustomDialogController | null = null;
 
   aboutToAppear(): void {
@@ -148,12 +150,18 @@ export struct SessionsTab {
   private openThread(thread: ThreadModel): void {
     AppStorage.setOrCreate(SessionStore.KEY_ACTIVE_THREAD_ID, thread.threadId);
     AppStorage.setOrCreate(SessionStore.KEY_MAIN_TAB, 1);
+    if (this.asPage) {
+      this.navStack.pop();
+    }
   }
 
   /** 新对话：回到聊天 Tab 欢迎态 */
   private startNewChat(): void {
     AppStorage.setOrCreate(SessionStore.KEY_ACTIVE_THREAD_ID, '');
     AppStorage.setOrCreate(SessionStore.KEY_MAIN_TAB, 1);
+    if (this.asPage) {
+      this.navStack.pop();
+    }
   }
 
   /** 长按会话：操作菜单（置顶/重命名/删除） */
@@ -252,6 +260,9 @@ export struct SessionsTab {
       AppStorage.setOrCreate(SessionStore.KEY_ACTIVE_THREAD_ID, newThreadId);
       AppStorage.setOrCreate(SessionStore.KEY_THREADS_DIRTY, true);
       AppStorage.setOrCreate(SessionStore.KEY_MAIN_TAB, 1);
+      if (this.asPage) {
+        this.navStack.pop();
+      }
       this.getUIContext().getPromptAction().showToast({ message: '已从最后回复分叉新会话' });
     } catch (e) {
       this.getUIContext().getPromptAction().showToast({
@@ -492,34 +503,36 @@ export struct SessionsTab {
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
       Column() {
-        Row() {
-          Column({ space: 4 }) {
-            Text($r('app.string.tab_sessions'))
-              .fontSize(26)
-              .fontWeight(FontWeight.Bold)
-              .fontColor($r('app.color.text_primary'))
-            Row({ space: 5 }) {
-              if (this.agentName !== '') {
-                SymbolGlyph($r('sys.symbol.robot'))
+        if (!this.asPage) {
+          Row() {
+            Column({ space: 4 }) {
+              Text($r('app.string.tab_sessions'))
+                .fontSize(26)
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+              Row({ space: 5 }) {
+                if (this.agentName !== '') {
+                  SymbolGlyph($r('sys.symbol.robot'))
+                    .fontSize(13)
+                    .fontColor([$r('app.color.brand')])
+                  Text(this.agentName)
+                    .fontSize(13)
+                    .fontColor($r('app.color.text_secondary'))
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .constraintSize({ maxWidth: 160 })
+                }
+                Text(this.agentName !== '' ? `· ${this.threadCount} 个会话` : `${this.threadCount} 个会话`)
                   .fontSize(13)
-                  .fontColor([$r('app.color.brand')])
-                Text(this.agentName)
-                  .fontSize(13)
-                  .fontColor($r('app.color.text_secondary'))
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .constraintSize({ maxWidth: 160 })
+                  .fontColor($r('app.color.text_tertiary'))
               }
-              Text(this.agentName !== '' ? `· ${this.threadCount} 个会话` : `${this.threadCount} 个会话`)
-                .fontSize(13)
-                .fontColor($r('app.color.text_tertiary'))
+              .width('100%')
             }
-            .width('100%')
+            .alignItems(HorizontalAlign.Start)
           }
-          .alignItems(HorizontalAlign.Start)
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 16, bottom: 10 })
         }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 16, bottom: 10 })
 
         if (this.loading && this.threadCount === 0) {
           Column() {

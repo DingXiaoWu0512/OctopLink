@@ -21,14 +21,13 @@ export struct PluginPage {
   @State loading: boolean = true;
   @State errorMsg: string = '';
   @State operating: boolean = false;
-  @State toolsOpen: boolean = false;
+  @State sheetOpen: boolean = false;
+  @State sheetMode: string = '';
   @State tools: Array<PluginToolModel> = [];
   @State toolsLoading: boolean = false;
   @State toolsError: string = '';
-  @State marketOpen: boolean = false;
   @State marketList: Array<MarketPluginModel> = [];
   @State marketLoading: boolean = false;
-  @State urlOpen: boolean = false;
   @State urlText: string = '';
   @State installing: boolean = false;
   private agentId: string = '';
@@ -169,7 +168,8 @@ export struct PluginPage {
           title: '通过 URL 安装',
           action: (): void => {
             this.urlText = '';
-            this.urlOpen = true;
+            this.sheetMode = 'url';
+            this.sheetOpen = true;
           }
         }
       ]
@@ -177,12 +177,13 @@ export struct PluginPage {
   }
 
   private async openMarket(): Promise<void> {
-    this.marketOpen = true;
+    this.sheetMode = 'market';
+    this.sheetOpen = true;
     this.marketLoading = true;
     try {
       this.marketList = await GlobalPluginService.market();
     } catch (e) {
-      this.marketOpen = false;
+      this.sheetOpen = false;
       this.toastError(e, '市场加载失败');
     } finally {
       this.marketLoading = false;
@@ -216,7 +217,7 @@ export struct PluginPage {
     try {
       await GlobalPluginService.marketInstall(plugin.id, force);
       this.getUIContext().getPromptAction().showToast({ message: `已安装 ${plugin.name}` });
-      this.marketOpen = false;
+      this.sheetOpen = false;
       await this.load();
     } catch (e) {
       if (e instanceof OctopApiError &&
@@ -244,7 +245,7 @@ export struct PluginPage {
     try {
       await GlobalPluginService.installUrl(url);
       this.getUIContext().getPromptAction().showToast({ message: '安装成功' });
-      this.urlOpen = false;
+      this.sheetOpen = false;
       await this.load();
     } catch (e) {
       this.toastError(e, '安装失败');
@@ -254,7 +255,8 @@ export struct PluginPage {
   }
 
   private async openTools(): Promise<void> {
-    this.toolsOpen = true;
+    this.sheetMode = 'tools';
+    this.sheetOpen = true;
     this.toolsLoading = true;
     this.toolsError = '';
     try {
@@ -533,17 +535,12 @@ export struct PluginPage {
           .layoutWeight(1)
           .width('100%')
           .scrollBar(BarState.Off)
-          .bindSheet(this.marketOpen, this.marketBuilder(), {
+          .bindSheet($$this.sheetOpen, this.sheetSwitchBuilder, {
             detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-            showClose: true
-          })
-          .bindSheet(this.urlOpen, this.urlBuilder(), {
-            height: 280,
-            showClose: true
-          })
-          .bindSheet(this.toolsOpen, this.toolsBuilder(), {
-            detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-            showClose: true
+            showClose: true,
+            onDisappear: (): void => {
+              this.sheetMode = '';
+            }
           })
         }
       }
@@ -555,6 +552,18 @@ export struct PluginPage {
     .onReady((ctx: NavDestinationContext): void => {
       this.onNavReady(ctx);
     })
+  }
+
+  /** 单 bindSheet 分发：market / url / tools */
+  @Builder
+  sheetSwitchBuilder() {
+    if (this.sheetMode === 'market') {
+      this.marketBuilder()
+    } else if (this.sheetMode === 'url') {
+      this.urlBuilder()
+    } else if (this.sheetMode === 'tools') {
+      this.toolsBuilder()
+    }
   }
 
   @Builder

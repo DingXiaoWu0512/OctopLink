@@ -19,6 +19,19 @@ class BuiltinChannelKind {
   }
 }
 
+/** 渠道平台徽标：单字符 + 平台主题色（本地渲染，不依赖网络图标） */
+class ChannelPlatformBadge {
+  readonly label: string;
+  readonly color: string;
+  readonly name: string;
+
+  constructor(label: string, color: string, name: string) {
+    this.label = label;
+    this.color = color;
+    this.name = name;
+  }
+}
+
 /** 当前专家的渠道列表：创建/扫码接入/详情/测试/启停/删除 */
 @Component
 export struct ChannelPage {
@@ -26,14 +39,14 @@ export struct ChannelPage {
   @State loading: boolean = true;
   @State errorMsg: string = '';
   @State operating: boolean = false;
-  @State createSheetOpen: boolean = false;
+  @State sheetOpen: boolean = false;
+  @State sheetMode: string = '';
   @State kindOptions: Array<BuiltinChannelKind> = [];
   @State kindIndex: number = 0;
   @State nameText: string = '';
   @State configText: string = '{}';
   @State creating: boolean = false;
   @State probing: boolean = false;
-  @State qrSheetOpen: boolean = false;
   @State qrPlatformIndex: number = -1;
   @State qrImage: string = '';
   @State qrStatus: string = '';
@@ -196,11 +209,36 @@ export struct ChannelPage {
 
   // ---- 创建渠道 ----
 
+  /** 渠道行平台徽标：已知平台返回品牌色，未知 kind 回退灰底首字符 */
+  private platformBadge(kind: string): ChannelPlatformBadge {
+    if (kind === 'dingtalk') {
+      return new ChannelPlatformBadge('钉', '#1677FF', '钉钉');
+    }
+    if (kind === 'wecom') {
+      return new ChannelPlatformBadge('企', '#00B96B', '企业微信');
+    }
+    if (kind === 'qq') {
+      return new ChannelPlatformBadge('Q', '#12B7F5', 'QQ');
+    }
+    if (kind === 'weixin') {
+      return new ChannelPlatformBadge('微', '#07C160', '微信');
+    }
+    if (kind === 'feishu') {
+      return new ChannelPlatformBadge('飞', '#3370FF', '飞书');
+    }
+    if (kind === 'yuanbao') {
+      return new ChannelPlatformBadge('元', '#FF7D00', '元宝');
+    }
+    const first: string = kind.length > 0 ? kind.charAt(0).toUpperCase() : '?';
+    return new ChannelPlatformBadge(first, '#7F7F7F', kind);
+  }
+
   private openCreateSheet(): void {
     this.nameText = '';
     this.configText = '{}';
     this.kindIndex = 0;
-    this.createSheetOpen = true;
+    this.sheetMode = 'create';
+    this.sheetOpen = true;
   }
 
   private selectedKind(): string {
@@ -251,7 +289,7 @@ export struct ChannelPage {
     this.creating = true;
     try {
       await ChannelService.create(this.agentId, this.selectedKind(), name, this.configText);
-      this.createSheetOpen = false;
+      this.sheetOpen = false;
       this.getUIContext().getPromptAction().showToast({ message: '渠道已创建' });
       this.load();
     } catch (e) {
@@ -268,7 +306,8 @@ export struct ChannelPage {
     this.qrImage = '';
     this.qrStatus = '正在生成二维码…';
     this.qrPolling = false;
-    this.qrSheetOpen = true;
+    this.sheetMode = 'qr';
+    this.sheetOpen = true;
     const platform: string = index >= 0 && index < this.qrPlatforms.length ?
       this.qrPlatforms[index].kind : '';
     try {
@@ -316,7 +355,7 @@ export struct ChannelPage {
   }
 
   private async pollOnce(platform: string, token: string, myToken: string): Promise<void> {
-    if (!this.qrPolling || !this.qrSheetOpen || myToken !== this.pollToken) {
+    if (!this.qrPolling || !this.sheetOpen || this.sheetMode !== 'qr' || myToken !== this.pollToken) {
       return;
     }
     if (this.pollCount > 90) {
@@ -335,7 +374,7 @@ export struct ChannelPage {
         this.qrStatus = '接入成功';
         this.getUIContext().getPromptAction().showToast({ message: '渠道接入成功' });
         this.stopBot(platform, token);
-        this.qrSheetOpen = false;
+        this.sheetOpen = false;
         this.load();
         return;
       }
@@ -423,6 +462,106 @@ export struct ChannelPage {
     } finally {
       this.operating = false;
     }
+  }
+
+  /** 单 bindSheet 分发：access / create / qr */
+  @Builder
+  private sheetSwitchBuilder() {
+    if (this.sheetMode === 'access') {
+      this.accessModeBuilder()
+    } else if (this.sheetMode === 'create') {
+      this.createSheetBuilder()
+    } else if (this.sheetMode === 'qr') {
+      this.qrSheetBuilder()
+    }
+  }
+
+  /** 接入方式选择：双卡布局 */
+  @Builder
+  private accessModeBuilder() {
+    Column({ space: 16 }) {
+      Text('接入渠道')
+        .fontSize(17)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+
+      Row({ space: 12 }) {
+        Column({ space: 8 }) {
+          Column() {
+            SymbolGlyph($r('sys.symbol.square_and_pencil'))
+              .fontSize(24)
+              .fontColor([$r('app.color.brand')])
+          }
+          .width(46)
+          .height(46)
+          .borderRadius(23)
+          .backgroundColor($r('app.color.brand_light'))
+          .justifyContent(FlexAlign.Center)
+
+          Text('创建渠道')
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+            .maxLines(1)
+
+          Text('选择类型，填写配置创建')
+            .fontSize(11)
+            .fontColor($r('app.color.text_tertiary'))
+            .maxLines(2)
+            .textAlign(TextAlign.Center)
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Center)
+        .padding({ left: 14, right: 14, top: 18, bottom: 18 })
+        .borderRadius(16)
+        .backgroundColor($r('app.color.bg_card'))
+        .border({ width: 1, color: $r('app.color.card_stroke') })
+        .onClick((): void => {
+          this.openCreateSheet();
+        })
+
+        Column({ space: 8 }) {
+          Column() {
+            SymbolGlyph($r('sys.symbol.dot_radiowaves_left_and_right'))
+              .fontSize(24)
+              .fontColor([$r('app.color.brand')])
+          }
+          .width(46)
+          .height(46)
+          .borderRadius(23)
+          .backgroundColor($r('app.color.brand_light'))
+          .justifyContent(FlexAlign.Center)
+
+          Text('扫码接入')
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+            .maxLines(1)
+
+          Text('钉钉/企微/微信等平台扫码')
+            .fontSize(11)
+            .fontColor($r('app.color.text_tertiary'))
+            .maxLines(2)
+            .textAlign(TextAlign.Center)
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Center)
+        .padding({ left: 14, right: 14, top: 18, bottom: 18 })
+        .borderRadius(16)
+        .backgroundColor($r('app.color.bg_card'))
+        .border({ width: 1, color: $r('app.color.card_stroke') })
+        .onClick((): void => {
+          this.qrPlatformIndex = -1;
+          this.qrImage = '';
+          this.qrStatus = '';
+          this.sheetMode = 'qr';
+        })
+      }
+      .width('100%')
+    }
+    .padding({ left: 18, right: 18, top: 18, bottom: 30 })
+    .width('100%')
   }
 
   @Builder
@@ -605,16 +744,16 @@ export struct ChannelPage {
               ForEach(this.channels, (channel: ChannelModel) => {
                 ListItem() {
                   Row({ space: 12 }) {
-                    Column() {
-                      SymbolGlyph($r('sys.symbol.dot_radiowaves_left_and_right'))
-                        .fontSize(20)
-                        .fontColor([channel.enabled ? $r('app.color.success') : $r('app.color.text_tertiary')])
-                    }
-                    .width(44)
-                    .height(44)
-                    .justifyContent(FlexAlign.Center)
-                    .backgroundColor(channel.enabled ? $r('app.color.success_soft') : $r('app.color.bg_input'))
-                    .borderRadius(14)
+                    Text(this.platformBadge(channel.kind).label)
+                      .fontSize(18)
+                      .fontWeight(FontWeight.Bold)
+                      .fontColor(Color.White)
+                      .width(44)
+                      .height(44)
+                      .textAlign(TextAlign.Center)
+                      .backgroundColor(this.platformBadge(channel.kind).color)
+                      .borderRadius(14)
+                      .opacity(channel.enabled ? 1 : 0.5)
                     Column({ space: 5 }) {
                       Row({ space: 6 }) {
                         Text(channel.name)
@@ -626,7 +765,7 @@ export struct ChannelPage {
                       }
                       .width('100%')
                       Row({ space: 8 }) {
-                        Text(channel.kind)
+                        Text(this.platformBadge(channel.kind).name)
                           .fontSize(12)
                           .fontColor($r('app.color.text_tertiary'))
                         Text(channel.enabled ? '已启用' : '已停用')
@@ -676,14 +815,11 @@ export struct ChannelPage {
         }
         .width('100%')
         .height('100%')
-        .bindSheet($$this.createSheetOpen, this.createSheetBuilder, {
-          detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-          showClose: true
-        })
-        .bindSheet($$this.qrSheetOpen, this.qrSheetBuilder, {
+        .bindSheet($$this.sheetOpen, this.sheetSwitchBuilder, {
           detents: [SheetSize.MEDIUM, SheetSize.LARGE],
           showClose: true,
           onDisappear: (): void => {
+            this.sheetMode = '';
             this.qrPolling = false;
             this.qrPlatformIndex = -1;
             this.qrImage = '';
@@ -704,27 +840,11 @@ export struct ChannelPage {
         .systemMaterial(UiMaterialKit.button())
         .margin(22)
         .onClick((): void => {
-          this.getUIContext().showActionSheet({
-            title: '接入渠道',
-            message: '选择接入方式',
-            sheets: [
-              {
-                title: '创建渠道',
-                action: (): void => {
-                  this.openCreateSheet();
-                }
-              },
-              {
-                title: '扫码接入',
-                action: (): void => {
-                  this.qrPlatformIndex = -1;
-                  this.qrImage = '';
-                  this.qrStatus = '';
-                  this.qrSheetOpen = true;
-                }
-              }
-            ]
-          });
+          this.qrPlatformIndex = -1;
+          this.qrImage = '';
+          this.qrStatus = '';
+          this.sheetMode = 'access';
+          this.sheetOpen = true;
         })
       }
       .width('100%')

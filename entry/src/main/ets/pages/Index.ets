@@ -13,6 +13,7 @@ import { MbtiPage } from './workspace/MbtiPage';
 import { UsersPage } from './workspace/UsersPage';
 import { SettingsPage } from './me/SettingsPage';
 import { ThreadSettingsPage } from './chat/ThreadSettingsPage';
+import { SessionsPage } from './chat/SessionsPage';
 import { SessionStore } from '../store/SessionStore';
 import { KeyboardAvoidMode } from '@kit.ArkUI';
 
@@ -55,6 +56,8 @@ struct Index {
       SettingsPage()
     } else if (name === 'threadSettings') {
       ThreadSettingsPage()
+    } else if (name === 'sessions') {
+      SessionsPage()
     }
   }
 
