@@ -9,6 +9,7 @@ import {
   WelcomeCardModel
 } from '../model/ExpertModels';
 import { ChatAttachmentModel } from '../model/MessageModels';
+import { SlashCommandSpec } from '../model/SlashModels';
 import { JsonHelper } from '../utils/JsonHelper';
 
 export class AgentService {
@@ -16,6 +17,12 @@ export class AgentService {
   static async listMine(): Promise<Array<AgentModel>> {
     const text: string = await HttpClient.getInstance().get('/api/agents?scope=mine');
     return AgentModel.parseList(text);
+  }
+
+  /** 原生斜杠命令列表（服务端动态下发，空列表时调用方走内置回退） */
+  static async listSlashCommands(): Promise<Array<SlashCommandSpec>> {
+    const text: string = await HttpClient.getInstance().get('/api/slash/commands?origin=ui');
+    return SlashCommandSpec.parseList(text);
   }
 
   /** 全部智能体（需 users 权限） */

@@ -6,6 +6,7 @@ const KEY_SERVER_URL = 'server_url';
 const KEY_USERNAME = 'username';
 const KEY_DISPLAY_NAME = 'display_name';
 const KEY_ROLE = 'role';
+const KEY_APPEARANCE = 'appearance_mode';
 
 /** 本地持久化的用户资料（仅展示用途，敏感数据不落盘） */
 export class UserProfilePref {
@@ -62,6 +63,14 @@ export class AppPrefs {
     const displayName = await this.getString(KEY_DISPLAY_NAME);
     const role = await this.getString(KEY_ROLE);
     return new UserProfilePref(username, displayName, role);
+  }
+
+  async getAppearance(): Promise<string> {
+    return await this.getString(KEY_APPEARANCE);
+  }
+
+  async setAppearance(mode: string): Promise<void> {
+    await this.putString(KEY_APPEARANCE, mode);
   }
 
   async clearAll(): Promise<void> {

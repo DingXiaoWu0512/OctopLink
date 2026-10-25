@@ -7,6 +7,7 @@ import { AgentService } from '../../service/AgentService';
 import { WelcomeCardModel } from '../../model/ExpertModels';
 import { AgentModel } from '../../model/AgentModels';
 import { ContextUsageModel, HistoryResult, ThreadModel } from '../../model/ThreadModels';
+import { SlashCategory, SlashCommandSpec, SlashGroup } from '../../model/SlashModels';
 import { HitlRequestModel } from '../../model/HitlModels';
 import { MessageBubble } from '../../components/MessageBubble';
 import { StreamingOrbit } from '../../components/StreamingOrbit';
@@ -32,21 +33,6 @@ class HitlActionView {
     this.name = name;
     this.description = description;
     this.argsPreview = argsPreview;
-  }
-}
-
-/** 斜杠命令候选项（输入 "/" 触发） */
-class SlashCommand {
-  readonly token: string;
-  readonly label: string;
-  readonly description: string;
-  readonly icon: Resource;
-
-  constructor(token: string, label: string, description: string, icon: Resource) {
-    this.token = token;
-    this.label = label;
-    this.description = description;
-    this.icon = icon;
   }
 }
 
@@ -90,6 +76,7 @@ export struct ChatHomeTab {
   @State hitlEditOpen: boolean = false;
   @State hitlEditArgs: string = '';
   @State inputMaxWidth: number = 460;
+  @State slashSpecs: Array<SlashCommandSpec> = SlashCommandSpec.fallbackList();
   private controller: ChatStreamController | null = null;
   private connectingPromise: Promise<boolean> | null = null;
   private scroller: Scroller = new Scroller();
@@ -106,6 +93,7 @@ export struct ChatHomeTab {
 
   aboutToAppear(): void {
     this.startBreathing();
+    this.loadSlashCommands();
     window.getLastWindow(getContext(this)).then((win: window.Window): void => {
       const wv: number = this.getUIContext().px2vp(win.getWindowProperties().windowRect.width);
       this.inputMaxWidth = wv < 600 ? 320 : (wv < 840 ? 380 : 460);
@@ -703,6 +691,13 @@ export struct ChatHomeTab {
     if (text === '') {
       return;
     }
+    // 客户端动作命令（/new、/stop 等）本地执行，不发送到服务端
+    const actionSpec = this.matchActionCommand(text);
+    if (actionSpec !== null) {
+      this.inputText = '';
+      this.runSlashCommand(actionSpec);
+      return;
+    }
     if (this.streaming) {
       await this.sendSteer(text);
       return;
@@ -1029,78 +1024,237 @@ export struct ChatHomeTab {
     return head.trim().toLowerCase();
   }
 
-  /** 原生斜杠命令（由服务端 agent 解析执行，作为消息发送） */
-  private slashCommands(): Array<SlashCommand> {
-    return [
-      new SlashCommand('model', '切换模型', '切换当前对话使用的模型', $r('sys.symbol.robot')),
-      new SlashCommand('compact', '压缩上下文', '压缩当前会话上下文', $r('sys.symbol.square_grid_2x2')),
-      new SlashCommand('usage', 'Token 用量', '查看上下文与 Token 用量', $r('sys.symbol.clock')),
-      new SlashCommand('skills', '技能', '查看当前可用技能列表', $r('sys.symbol.wand_and_stars')),
-      new SlashCommand('sessions', '会话管理', '查看与管理当前会话', $r('sys.symbol.timer')),
-      new SlashCommand('system', '系统', '查看系统状态信息', $r('sys.symbol.gearshape'))
-    ];
+  /** 拉取服务端原生斜杠命令（失败保持内置回退） */
+  private loadSlashCommands(): void {
+    AgentService.listSlashCommands().then((specs: Array<SlashCommandSpec>): void => {
+      if (specs.length > 0) {
+        this.slashSpecs = specs;
+      }
+    }).catch((): void => {
+      Log.debug('slash commands load failed, keep fallback');
+    });
   }
 
-  /** 当前过滤词命中的斜杠命令 */
-  private matchingSlashCommands(): Array<SlashCommand> {
+  /** 当前过滤词命中的斜杠分组（按 core/skills/session/media/system/debug 排序） */
+  private matchingSlashGroups(): Array<SlashGroup> {
     const query: string | null = this.slashQuery();
     if (query === null) {
       return [];
     }
-    const result: Array<SlashCommand> = [];
-    for (const cmd of this.slashCommands()) {
-      if (query === '' || cmd.token.startsWith(query) || cmd.label.indexOf(query) >= 0) {
-        result.push(cmd);
+    const groups: Array<SlashGroup> = [];
+    const order: Array<string> = SlashCategory.order();
+    const rest: Array<SlashCommandSpec> = [];
+    for (const category of order) {
+      const items: Array<SlashCommandSpec> = [];
+      for (const spec of this.slashSpecs) {
+        if (spec.category === category && spec.matches(query)) {
+          items.push(spec);
+        }
+      }
+      if (items.length > 0) {
+        groups.push(new SlashGroup(category, SlashCategory.label(category), items));
       }
     }
-    return result;
+    for (const spec of this.slashSpecs) {
+      if (order.indexOf(spec.category) < 0 && spec.matches(query)) {
+        rest.push(spec);
+      }
+    }
+    if (rest.length > 0) {
+      groups.push(new SlashGroup('other', SlashCategory.label('other'), rest));
+    }
+    return groups;
   }
 
-  /** 选中命令：补全到输入框，可继续补参数后发送给专家执行 */
-  private runSlashCommand(cmd: SlashCommand): void {
-    this.inputText = `/${cmd.token} `;
+  /** Lucide 图标名 → 系统 Symbol 映射 */
+  private slashIcon(icon: string): Resource {
+    if (icon === 'Activity') {
+      return $r('sys.symbol.dot_radiowaves_left_and_right');
+    }
+    if (icon === 'Cpu') {
+      return $r('sys.symbol.robot');
+    }
+    if (icon === 'MessagesSquare') {
+      return $r('sys.symbol.message_fill');
+    }
+    if (icon === 'RefreshCw') {
+      return $r('sys.symbol.arrow_clockwise');
+    }
+    if (icon === 'Archive') {
+      return $r('sys.symbol.square_grid_2x2');
+    }
+    if (icon === 'Database') {
+      return $r('sys.symbol.folder_fill');
+    }
+    if (icon === 'Square') {
+      return $r('sys.symbol.stop_circle');
+    }
+    if (icon === 'BarChart3') {
+      return $r('sys.symbol.doc_text');
+    }
+    if (icon === 'Coins') {
+      return $r('sys.symbol.timer');
+    }
+    if (icon === 'List') {
+      return $r('sys.symbol.message');
+    }
+    if (icon === 'ArrowLeftRight') {
+      return $r('sys.symbol.arrow_left');
+    }
+    if (icon === 'Undo2') {
+      return $r('sys.symbol.play');
+    }
+    if (icon === 'Type') {
+      return $r('sys.symbol.character_textbox');
+    }
+    if (icon === 'Trash2') {
+      return $r('sys.symbol.trash');
+    }
+    if (icon === 'Pin') {
+      return $r('sys.symbol.pin');
+    }
+    if (icon === 'Clock') {
+      return $r('sys.symbol.clock');
+    }
+    if (icon === 'Bot') {
+      return $r('sys.symbol.robot');
+    }
+    if (icon === 'Sparkles') {
+      return $r('sys.symbol.wand_and_stars');
+    }
+    if (icon === 'Plug') {
+      return $r('sys.symbol.link');
+    }
+    if (icon === 'CircleHelp') {
+      return $r('sys.symbol.lightbulb');
+    }
+    return $r('sys.symbol.wand_and_stars');
   }
 
-  /** 斜杠命令候选面板（输入 "/" 时展示在输入框上方） */
+  /** tone → 主色 */
+  private slashToneColor(tone: string): Resource {
+    if (tone === 'emerald') {
+      return $r('app.color.success');
+    }
+    if (tone === 'rose') {
+      return $r('app.color.danger');
+    }
+    if (tone === 'amber' || tone === 'orange') {
+      return $r('app.color.warning');
+    }
+    if (tone === 'slate') {
+      return $r('app.color.text_secondary');
+    }
+    return $r('app.color.brand');
+  }
+
+  /** tone → 柔和底色 */
+  private slashToneBg(tone: string): Resource {
+    if (tone === 'emerald') {
+      return $r('app.color.success_soft');
+    }
+    if (tone === 'rose') {
+      return $r('app.color.danger_soft');
+    }
+    if (tone === 'amber' || tone === 'orange') {
+      return $r('app.color.warning_soft');
+    }
+    if (tone === 'slate') {
+      return $r('app.color.bg_input');
+    }
+    return $r('app.color.brand_light');
+  }
+
+  /** 选中命令：客户端动作本地执行；需参数预填；其余直接发送（与 Web 端 runSlashCommand 对齐） */
+  private runSlashCommand(spec: SlashCommandSpec): void {
+    if (spec.clientAction === 'new_chat') {
+      this.inputText = '';
+      this.startNewConversation();
+      return;
+    }
+    if (spec.clientAction === 'cancel_stream') {
+      this.inputText = '';
+      this.cancelTurn();
+      return;
+    }
+    if (spec.needsInput()) {
+      this.inputText = spec.prefillText();
+      return;
+    }
+    this.inputText = spec.commandToken();
+    this.send();
+  }
+
+  /** 精确匹配带客户端动作的斜杠命令（/new、/stop 及其别名），供 send 拦截 */
+  private matchActionCommand(text: string): SlashCommandSpec | null {
+    for (const spec of this.slashSpecs) {
+      if (spec.clientAction === 'none') {
+        continue;
+      }
+      if (text === spec.commandToken() || text === `/${spec.name}`) {
+        return spec;
+      }
+      for (const alias of spec.aliases) {
+        if (text === `/${alias}`) {
+          return spec;
+        }
+      }
+    }
+    return null;
+  }
+  /** 斜杠命令候选面板（输入 "/" 时展示在输入框上方，按分类分组） */
   @Builder
   private slashPanelBuilder() {
     Scroll() {
       Column() {
-        ForEach(this.matchingSlashCommands(), (cmd: SlashCommand) => {
-          Row({ space: 10 }) {
-            Column() {
-              SymbolGlyph(cmd.icon)
-                .fontSize(15)
-                .fontColor([$r('app.color.brand')])
-            }
-            .width(28)
-            .height(28)
-            .borderRadius(9)
-            .backgroundColor($r('app.color.brand_light'))
-            .justifyContent(FlexAlign.Center)
-            Column({ space: 1 }) {
-              Text(cmd.label)
-                .fontSize(14)
-                .fontWeight(FontWeight.Medium)
-                .fontColor($r('app.color.text_primary'))
-              Text(cmd.description)
+        ForEach(this.matchingSlashGroups(), (group: SlashGroup) => {
+          Text(group.label)
+            .fontSize(11)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+            .textAlign(TextAlign.Start)
+            .padding({ left: 12, top: 6, bottom: 3 })
+          ForEach(group.items, (spec: SlashCommandSpec) => {
+            Row({ space: 10 }) {
+              Column() {
+                SymbolGlyph(this.slashIcon(spec.icon))
+                  .fontSize(15)
+                  .fontColor([this.slashToneColor(spec.tone)])
+              }
+              .width(28)
+              .height(28)
+              .borderRadius(9)
+              .backgroundColor(this.slashToneBg(spec.tone))
+              .justifyContent(FlexAlign.Center)
+              Column({ space: 1 }) {
+                Text(spec.label())
+                  .fontSize(14)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor($r('app.color.text_primary'))
+                if (spec.description() !== '') {
+                  Text(spec.description())
+                    .fontSize(11)
+                    .fontColor($r('app.color.text_tertiary'))
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                }
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
+              Text(spec.commandToken())
                 .fontSize(11)
                 .fontColor($r('app.color.text_tertiary'))
+                .fontFamily('monospace')
             }
-            .layoutWeight(1)
-            .alignItems(HorizontalAlign.Start)
-            Text(`/${cmd.token}`)
-              .fontSize(11)
-              .fontColor($r('app.color.text_tertiary'))
-              .fontFamily('monospace')
-          }
-          .width('100%')
-          .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-          .borderRadius(12)
-          .onClick((): void => {
-            this.runSlashCommand(cmd);
-          })
-        }, (cmd: SlashCommand) => cmd.token)
+            .width('100%')
+            .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+            .borderRadius(12)
+            .onClick((): void => {
+              this.runSlashCommand(spec);
+            })
+          }, (spec: SlashCommandSpec) => spec.name)
+        }, (group: SlashGroup) => group.category)
       }
       .width('100%')
     }
@@ -1627,8 +1781,29 @@ export struct ChatHomeTab {
   }
 
   build() {
-    Column() {
-      Row({ space: 10 }) {
+    Stack({ alignContent: Alignment.Bottom }) {
+      Stack({ alignContent: Alignment.Top }) {
+        // 顶部沉浸光感层：模糊渐变 + 连接异常条 + 头部操作区
+        Column() {
+          if (this.wsError !== '') {
+            Row({ space: 6 }) {
+              SymbolGlyph($r('sys.symbol.wifi'))
+                .fontSize(13)
+                .fontColor([$r('app.color.warning')])
+              Text(this.wsError)
+                .fontSize(12)
+                .fontColor($r('app.color.warning'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .layoutWeight(1)
+            }
+            .width('100%')
+            .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+            .borderRadius(10)
+            .backgroundColor($r('app.color.warning_soft'))
+            .margin({ left: 16, right: 16, bottom: 4 })
+          }
+          Row({ space: 10 }) {
         Button({ type: ButtonType.Normal, stateEffect: true }) {
           Row({ space: 8 }) {
             Image($r('app.media.octop_logo'))
@@ -1717,27 +1892,18 @@ export struct ChatHomeTab {
           this.navStack.pushPath(new NavPathInfo('sessions', null));
         })
       }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 8 })
-
-      if (this.wsError !== '') {
-        Row({ space: 6 }) {
-          SymbolGlyph($r('sys.symbol.wifi'))
-            .fontSize(13)
-            .fontColor([$r('app.color.warning')])
-          Text(this.wsError)
-            .fontSize(12)
-            .fontColor($r('app.color.warning'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
+        .width('100%')
+        .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 8 })
         }
         .width('100%')
-        .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-        .borderRadius(10)
-        .backgroundColor($r('app.color.warning_soft'))
-        .margin({ left: 16, right: 16, bottom: 4 })
-      }
+        .padding({ bottom: 18 })
+        .linearGradient({
+          angle: 180,
+          colors: [[$r('app.color.bar_glass'), 0.0], [$r('app.color.bar_glass'), 0.62], [Color.Transparent, 1.0]]
+        })
+        .backgroundBlurStyle(BlurStyle.Thin)
+        .hitTestBehavior(HitTestMode.Transparent)
+        .zIndex(2)
 
       if (!this.historyReady && this.loadError === '') {
         Column() {
@@ -1746,7 +1912,7 @@ export struct ChatHomeTab {
             .height(36)
             .color($r('app.color.brand'))
         }
-        .layoutWeight(1)
+        .height('100%')
         .width('100%')
         .justifyContent(FlexAlign.Center)
       } else if (this.loadError !== '' && this.messages.length === 0) {
@@ -1761,11 +1927,10 @@ export struct ChatHomeTab {
             }
           })
         }
-        .layoutWeight(1)
+        .height('100%')
         .width('100%')
         .justifyContent(FlexAlign.Center)
       } else {
-        Stack({ alignContent: Alignment.Bottom }) {
           List({ scroller: this.scroller, space: 12 }) {
             if (this.historyHasMore) {
               ListItem() {
@@ -1814,15 +1979,26 @@ export struct ChatHomeTab {
           }
           .width('100%')
           .height('100%')
-          .padding({ left: 14, right: 14, top: 6, bottom: 6 })
+          .padding({ left: 14, right: 14, top: this.topInset + 66, bottom: this.bottomPad + 138 })
           .scrollBar(BarState.Off)
           // 从底部开始布局：打开会话直接显示最新消息（无延迟滚动闪烁），键盘弹出压缩视口时消息仍锚定底部
           .stackFromEnd(this.messages.length > 0)
-
-        }
-        .layoutWeight(1)
-        .width('100%')
       }
+      }
+      .width('100%')
+      .height('100%')
+
+      // 底部沉浸层：渐变过渡 + 输入区
+      Column() {
+        Column()
+          .height(26)
+          .width('100%')
+          .linearGradient({
+            angle: 180,
+            colors: [[Color.Transparent, 0.0], [$r('app.color.bar_glass'), 1.0]]
+          })
+          .backgroundBlurStyle(BlurStyle.Thin)
+          .hitTestBehavior(HitTestMode.None)
 
       if (this.streaming && this.streamPhase !== '') {
         Row({ space: 7 }) {
@@ -1883,7 +2059,7 @@ export struct ChatHomeTab {
         .align(Alignment.Start)
       }
 
-      if (this.slashQuery() !== null && this.matchingSlashCommands().length > 0) {
+      if (this.slashQuery() !== null && this.matchingSlashGroups().length > 0) {
         this.slashPanelBuilder()
       }
 
@@ -2053,6 +2229,9 @@ export struct ChatHomeTab {
           })
         }
       }
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Center)
     }
     .width('100%')
     .height('100%')

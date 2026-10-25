@@ -13,10 +13,11 @@
  * limitations under the License.
  */
 
-import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { SessionStore } from '../store/SessionStore';
+import { AppearanceStore } from '../store/AppearanceStore';
 
 const DOMAIN = 0x0000;
 
@@ -46,16 +47,31 @@ export default class EntryAbility extends UIAbility {
       hilog.error(DOMAIN, 'testTag', 'Failed to set layout fullscreen. Cause: %{public}s', JSON.stringify(err));
     }
 
-    // 先恢复本地会话（安全存储 token + 偏好服务器地址），再加载首页，避免登录态闪变
+    // 先恢复本地会话（安全存储 token + 偏好服务器地址 + 外观模式），再加载首页，避免登录态闪变
     SessionStore.restore(this.context).then((): void => {
-      windowStage.loadContent('pages/Index', (err) => {
-        if (err.code) {
-          hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
-          return;
-        }
-        hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+      AppearanceStore.restore(this.context).then((): void => {
+        windowStage.loadContent('pages/Index', (err) => {
+          if (err.code) {
+            hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
+            return;
+          }
+          hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+        });
       });
     });
+  }
+
+  /** 外观（浅色/深色/跟随系统）切换后，同步刷新状态栏文字颜色 */
+  onConfigurationUpdate(newConfig: Configuration): void {
+    try {
+      const isDark: boolean = newConfig.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+      window.getLastWindow(this.context).then((win: window.Window): void => {
+        win.setWindowSystemBarProperties({ statusBarContentColor: isDark ? '#FFFFFF' : '#182431' });
+      }).catch((): void => {
+      });
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'Failed to update status bar color. Cause: %{public}s', JSON.stringify(err));
+    }
   }
 
   onWindowStageDestroy(): void {

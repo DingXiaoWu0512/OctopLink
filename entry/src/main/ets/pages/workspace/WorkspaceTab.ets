@@ -362,26 +362,10 @@ export struct WorkspaceTab {
   }
 
   build() {
-    Column() {
+    Stack({ alignContent: Alignment.Top }) {
       Refresh({ refreshing: $$this.refreshing }) {
         Scroll() {
           Column({ space: 14 }) {
-            Column({ space: 4 }) {
-              Text($r('app.string.workspace_title'))
-                .fontSize(26)
-                .fontWeight(FontWeight.Bold)
-                .fontColor($r('app.color.text_primary'))
-                .width('100%')
-                .textAlign(TextAlign.Start)
-              Text(this.dateLine())
-                .fontSize(13)
-                .fontColor($r('app.color.text_tertiary'))
-                .width('100%')
-                .textAlign(TextAlign.Start)
-            }
-            .margin({ top: 16 })
-            .width('100%')
-
             this.heroBuilder()
             this.statsBuilder()
 
@@ -398,21 +382,43 @@ export struct WorkspaceTab {
             .width('100%')
           }
           .width('100%')
-          .padding({ left: 16, right: 16, bottom: this.bottomPad + 20 })
+          .padding({ left: 16, right: 16, top: this.topInset + 84, bottom: this.bottomPad + 20 })
           .alignItems(HorizontalAlign.Start)
         }
         .width('100%')
         .scrollBar(BarState.Off)
       }
-      .layoutWeight(1)
       .width('100%')
+      .height('100%')
       .onRefreshing((): void => {
         this.refreshAll();
       })
+
+      // 固定标题层：沉浸光感模糊渐变（标题不随卡片滚动）
+      Column({ space: 4 }) {
+        Text($r('app.string.workspace_title'))
+          .fontSize(26)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .textAlign(TextAlign.Start)
+        Text(this.dateLine())
+          .fontSize(13)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+          .textAlign(TextAlign.Start)
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 14 })
+      .linearGradient({
+        angle: 180,
+        colors: [[$r('app.color.bar_glass'), 0.0], [$r('app.color.bar_glass'), 0.55], [Color.Transparent, 1.0]]
+      })
+      .backgroundBlurStyle(BlurStyle.Thin)
+      .hitTestBehavior(HitTestMode.Transparent)
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.topInset })
     .backgroundColor($r('app.color.bg_page'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }

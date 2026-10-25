@@ -1,5 +1,6 @@
 import { pasteboard } from '@kit.BasicServicesKit';
 import { SessionStore } from '../../store/SessionStore';
+import { AppearanceStore } from '../../store/AppearanceStore';
 import { ChangePasswordDialog } from '../../components/ChangePasswordDialog';
 import { SettingsRow } from '../../components/SettingsRow';
 import { AuthService } from '../../service/AuthService';
@@ -14,6 +15,7 @@ export struct MeTab {
   @StorageProp(SessionStore.KEY_ROLE) role: string = '';
   @StorageProp(SessionStore.KEY_BASE_URL) serverUrl: string = '';
   @StorageProp(SessionStore.KEY_AGENT_NAME) agentName: string = '';
+  @StorageProp(AppearanceStore.KEY_APPEARANCE) appearanceMode: string = AppearanceStore.MODE_AUTO;
   @Consume('navStack') navStack: NavPathStack;
   @Prop topInset: number = 0;
   @Prop bottomPad: number = 72;
@@ -81,6 +83,31 @@ export struct MeTab {
 
   private goExpert(): void {
     AppStorage.setOrCreate(SessionStore.KEY_MAIN_TAB, 0);
+  }
+
+  /** 切换外观：浅色 / 深色 / 跟随系统（全局生效并持久化） */
+  private setAppearance(mode: string): void {
+    if (this.appearanceMode === mode) {
+      return;
+    }
+    AppearanceStore.setMode(mode, getContext(this)).catch((): void => {
+      Log.debug('appearance persist failed');
+    });
+  }
+
+  @Builder
+  private appearanceOption(label: string, mode: string) {
+    Button(label)
+      .fontSize(13)
+      .fontWeight(this.appearanceMode === mode ? FontWeight.Medium : FontWeight.Normal)
+      .fontColor(this.appearanceMode === mode ? $r('app.color.brand') : $r('app.color.text_secondary'))
+      .backgroundColor(this.appearanceMode === mode ? $r('app.color.brand_light') : $r('app.color.bg_input'))
+      .borderRadius(12)
+      .height(36)
+      .layoutWeight(1)
+      .onClick((): void => {
+        this.setAppearance(mode);
+      })
   }
 
   private async copyServerUrl(): Promise<void> {
@@ -197,26 +224,22 @@ export struct MeTab {
   }
 
   build() {
-    Column() {
+    Stack({ alignContent: Alignment.Top }) {
       Scroll() {
         Column({ space: 14 }) {
-          Column({ space: 4 }) {
-            Text($r('app.string.me_title'))
-              .fontSize(26)
-              .fontWeight(FontWeight.Bold)
-              .fontColor($r('app.color.text_primary'))
-              .width('100%')
-              .textAlign(TextAlign.Start)
-            Text('账号与服务管理')
-              .fontSize(13)
-              .fontColor($r('app.color.text_tertiary'))
-              .width('100%')
-              .textAlign(TextAlign.Start)
-          }
-          .margin({ top: 16 })
-          .width('100%')
-
           this.heroBuilder()
+
+          Column() {
+            this.sectionHeader('外观')
+            Row({ space: 8 }) {
+              this.appearanceOption('浅色', AppearanceStore.MODE_LIGHT)
+              this.appearanceOption('深色', AppearanceStore.MODE_DARK)
+              this.appearanceOption('跟随系统', AppearanceStore.MODE_AUTO)
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
 
           Column() {
             this.sectionHeader('连接')
@@ -337,16 +360,38 @@ export struct MeTab {
             .margin({ top: 8 })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, bottom: this.bottomPad + 16 })
+        .padding({ left: 16, right: 16, top: this.topInset + 84, bottom: this.bottomPad + 16 })
         .alignItems(HorizontalAlign.Start)
       }
-      .layoutWeight(1)
       .width('100%')
+      .height('100%')
       .scrollBar(BarState.Off)
+
+      // 固定标题层：沉浸光感模糊渐变（标题不随卡片滚动）
+      Column({ space: 4 }) {
+        Text($r('app.string.me_title'))
+          .fontSize(26)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .textAlign(TextAlign.Start)
+        Text('账号与服务管理')
+          .fontSize(13)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+          .textAlign(TextAlign.Start)
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 14 })
+      .linearGradient({
+        angle: 180,
+        colors: [[$r('app.color.bar_glass'), 0.0], [$r('app.color.bar_glass'), 0.55], [Color.Transparent, 1.0]]
+      })
+      .backgroundBlurStyle(BlurStyle.Thin)
+      .hitTestBehavior(HitTestMode.Transparent)
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.topInset })
     .backgroundColor($r('app.color.bg_page'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
