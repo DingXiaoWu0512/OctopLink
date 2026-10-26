@@ -239,6 +239,10 @@ export struct TeamsPage {
       .onClick((): void => {
         this.modelSheetOpen = true;
       })
+      .bindSheet($$this.modelSheetOpen, this.modelSheetBuilder, {
+        detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+        showClose: true
+      })
 
       Column({ space: 6 }) {
         Row() {
@@ -440,10 +444,6 @@ export struct TeamsPage {
         .width('100%')
         .height('100%')
         .bindSheet($$this.sheetOpen, this.teamSheetBuilder, {
-          detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-          showClose: true
-        })
-        .bindSheet($$this.modelSheetOpen, this.modelSheetBuilder, {
           detents: [SheetSize.MEDIUM, SheetSize.LARGE],
           showClose: true
         })

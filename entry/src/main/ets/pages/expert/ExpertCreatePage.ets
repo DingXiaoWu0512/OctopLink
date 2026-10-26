@@ -774,6 +774,10 @@ export struct ExpertCreatePage {
                 .onClick((): void => {
                   this.modelSheetOpen = true;
                 })
+                .bindSheet($$this.modelSheetOpen, this.modelSheetBuilder, {
+                  detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+                  showClose: true
+                })
               }
               .width('100%')
               .alignItems(HorizontalAlign.Start)
@@ -849,10 +853,6 @@ export struct ExpertCreatePage {
       .width('100%')
       .height('100%')
       .bindSheet($$this.detailOpen, this.detailSheetBuilder, {
-        detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-        showClose: true
-      })
-      .bindSheet($$this.modelSheetOpen, this.modelSheetBuilder, {
         detents: [SheetSize.MEDIUM, SheetSize.LARGE],
         showClose: true
       })

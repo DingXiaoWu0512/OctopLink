@@ -533,11 +533,12 @@ export struct ExpertListPage {
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 10 })
-        .linearGradient({
-          angle: 180,
-          colors: [[$r('app.color.bar_glass'), 0.0], [$r('app.color.bar_glass'), 1.0]]
+        .backgroundEffect({
+          radius: 24,
+          saturation: 1.5,
+          brightness: 1.05,
+          color: $r('app.color.bar_glass')
         })
-        .backgroundBlurStyle(BlurStyle.Thin)
 
         Column()
           .height(30)

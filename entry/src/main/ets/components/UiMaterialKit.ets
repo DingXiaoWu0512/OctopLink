@@ -17,13 +17,13 @@ export class UiMaterialKit {
     return UiMaterialKit.supported;
   }
 
-  /** 悬浮导航栏：薄玻璃 + 交互变形 + 光感跟随反馈 + 自动补色 + 阴影；不支持返回 null */
+  /** 悬浮导航栏：超薄玻璃 + 交互变形 + 光感跟随反馈 + 自动补色 + 阴影；不支持返回 null */
   static navBarMaterial(): uiMaterial.ImmersiveMaterial | null {
     if (!UiMaterialKit.isSupported()) {
       return null;
     }
     return new uiMaterial.ImmersiveMaterial({
-      style: uiMaterial.ImmersiveStyle.THIN,
+      style: uiMaterial.ImmersiveStyle.ULTRA_THIN,
       colorInvert: true,
       applyShadow: true,
       interactive: true,

@@ -376,11 +376,12 @@ export struct MeTab {
           .width('100%')
           .textAlign(TextAlign.Start)
           .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 8 })
-          .linearGradient({
-          angle: 180,
-          colors: [[$r('app.color.bar_glass'), 0.0], [$r('app.color.bar_glass'), 1.0]]
-        })
-        .backgroundBlurStyle(BlurStyle.Thin)
+          .backgroundEffect({
+            radius: 24,
+            saturation: 1.5,
+            brightness: 1.05,
+            color: $r('app.color.bar_glass')
+          })
 
         Column()
           .height(30)
