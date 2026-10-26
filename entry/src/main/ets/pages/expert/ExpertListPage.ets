@@ -372,8 +372,69 @@ export struct ExpertListPage {
     )
   }
 
+  /** 沉浸光感标题栏：静止透底无边条，滚动时系统 GRADUAL_BLUR 渐变模糊 */
+  @Builder
+  titleBarBuilder() {
+    Row() {
+      Text($r('app.string.tab_expert'))
+        .fontSize(26)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text_primary'))
+
+      Blank()
+
+      Button({ type: ButtonType.Normal, stateEffect: true }) {
+        Text('团队')
+          .fontSize(13)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.icon_secondary'))
+      }
+      .height(38)
+      .borderRadius(19)
+      .backgroundColor($r('app.color.bg_card'))
+      .systemMaterial(UiMaterialKit.button())
+      .padding({ left: 16, right: 16 })
+      .onClick((): void => {
+        this.navStack.pushPath(new NavPathInfo('teams', null));
+      })
+
+      Button({ type: ButtonType.Circle, stateEffect: true }) {
+        SymbolGlyph(this.searching ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
+          .fontSize(18)
+          .fontColor([$r('app.color.icon_secondary')])
+      }
+      .width(38)
+      .height(38)
+      .backgroundColor($r('app.color.bg_card'))
+      .systemMaterial(UiMaterialKit.button())
+      .onClick((): void => {
+        if (this.searching) {
+          this.keyword = '';
+        }
+        this.searching = !this.searching;
+      })
+
+      Button({ type: ButtonType.Circle, stateEffect: true }) {
+        SymbolGlyph($r('sys.symbol.plus'))
+          .fontSize(20)
+          .fontColor([$r('app.color.icon_secondary')])
+      }
+      .width(38)
+      .height(38)
+      .backgroundColor($r('app.color.bg_card'))
+      .systemMaterial(UiMaterialKit.button())
+      .margin({ left: 8 })
+      .onClick((): void => {
+        this.goCreate();
+      })
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 10 })
+    .expandSafeArea([SafeAreaType.SYSTEM])
+  }
+
   build() {
-    Stack({ alignContent: Alignment.Top }) {
+    Navigation() {
       Column() {
       if (this.searching) {
         TextInput({
@@ -474,84 +535,17 @@ export struct ExpertListPage {
       }
       .width('100%')
       .height('100%')
-      .padding({ top: this.topInset + 92 })
+      .padding({ top: this.topInset + 66 })
 
-      // 固定标题层：毛玻璃区 + 无硬边渐隐尾遮罩（标题不随列表滚动）
-      Column() {
-        Row() {
-          Text($r('app.string.tab_expert'))
-            .fontSize(26)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.text_primary'))
-
-          Blank()
-
-          Button({ type: ButtonType.Normal, stateEffect: true }) {
-            Text('团队')
-              .fontSize(13)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.icon_secondary'))
-          }
-          .height(38)
-          .borderRadius(19)
-          .backgroundColor($r('app.color.bg_card'))
-          .systemMaterial(UiMaterialKit.button())
-          .padding({ left: 16, right: 16 })
-          .onClick((): void => {
-            this.navStack.pushPath(new NavPathInfo('teams', null));
-          })
-
-          Button({ type: ButtonType.Circle, stateEffect: true }) {
-            SymbolGlyph(this.searching ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
-              .fontSize(18)
-              .fontColor([$r('app.color.icon_secondary')])
-          }
-          .width(38)
-          .height(38)
-          .backgroundColor($r('app.color.bg_card'))
-          .systemMaterial(UiMaterialKit.button())
-          .onClick((): void => {
-            if (this.searching) {
-              this.keyword = '';
-            }
-            this.searching = !this.searching;
-          })
-
-          Button({ type: ButtonType.Circle, stateEffect: true }) {
-            SymbolGlyph($r('sys.symbol.plus'))
-              .fontSize(20)
-              .fontColor([$r('app.color.icon_secondary')])
-          }
-          .width(38)
-          .height(38)
-          .backgroundColor($r('app.color.bg_card'))
-          .systemMaterial(UiMaterialKit.button())
-          .margin({ left: 8 })
-          .onClick((): void => {
-            this.goCreate();
-          })
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 10 })
-        .backgroundEffect({
-          radius: 24,
-          saturation: 1.5,
-          brightness: 1.05,
-          color: $r('app.color.bar_glass')
-        })
-
-        Column()
-          .height(30)
-          .width('100%')
-          .linearGradient({
-            angle: 180,
-            colors: [[$r('app.color.scrim_strong'), 0.0], [$r('app.color.scrim_soft'), 0.5], [$r('app.color.scrim_clear'), 1.0]]
-          })
-          .hitTestBehavior(HitTestMode.None)
-      }
-      .width('100%')
-      .hitTestBehavior(HitTestMode.Transparent)
     }
+    .title({
+      builder: this.titleBarBuilder,
+      height: this.topInset + 58
+    }, {
+      barStyle: BarStyle.STACK,
+      scrollEffectOptions: { scrollEffectType: ScrollEffectType.GRADUAL_BLUR }
+    })
+    .hideBackButton(true)
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 2,
+  "status": "ok",
+  "producer": {
+    "tool": "recognize_ui_components",
+    "model": "Qwen3_VL_235B_A22B_Instruct",
+    "invocationId": "16c7fddb-ba58-468d-91ad-b9373865f585",
+    "createdAt": "2026-10-26T02:56:40.209Z"
+  },
+  "inputs": {
+    "image": {
+      "path": ".screens/crop_bot_expert.png",
+      "sha256": "3a27e541c03a03b8d1fbcd00d318d5782452ebf69491992e1697bfec4b77c438"
+    },
+    "requirements": {
+      "text": "这是 HarmonyOS 应用专家页底部区域截图（原图 1320 宽，本图高 400px，对应原图 y=2448~2848，屏幕最底部）。请精确描述：1) 从上到下每一层水平条带的颜色（估算 RGB）和高度；2) 底部导航胶囊的材质观感：是半透明玻璃质感还是实心色块？有没有模糊透出下方内容？3) 胶囊背后、周围或下方是否有独立的白色/浅色实心横条（区别于页面背景 #F4F5F8）？4) 最底部手势条区域是什么颜色？",
+      "sha256": "c6581049bf69d5d3fa64f7aac534a89be95cb912de7bb3b94c4f752879edf182"
+    }
+  },
+  "analysis": {
+    "canvas": {
+      "width": 1320,
+      "height": 400
+    },
+    "visible_components": [
+      {
+        "id": "component-1",
+        "name": "底部导航栏",
+        "visual_evidence": "一个横向排列的圆角矩形容器，内含四个图标和文字标签：'专家'（蓝色机器人图标）、'聊天'（对话气泡图标）、'工作台'（九宫格图标）、'我的'（人形图标）。",
+        "component_candidates": [
+          {
+            "name": "Tabs",
+            "confidence": 0.9,
+            "reason": "用于实现底部导航，支持图标和文字标签组合，可选中状态高亮。"
+          },
+          {
+            "name": "Button",
+            "confidence": 0.7,
+            "reason": "每个导航项可视为独立按钮，但整体结构更适合用 Tabs 管理。"
+          }
+        ]
+      }
+    ],
+    "global_observations": [],
+    "uncertainties": []
+  }
+}

@@ -223,8 +223,24 @@ export struct MeTab {
     .systemMaterial(UiMaterialKit.card())
   }
 
+  /** 沉浸光感标题栏：静止透底无边条，滚动时系统 GRADUAL_BLUR 渐变模糊 */
+  @Builder
+  titleBarBuilder() {
+    Column() {
+      Text($r('app.string.me_title'))
+        .fontSize(26)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 8 })
+    }
+    .width('100%')
+    .expandSafeArea([SafeAreaType.SYSTEM])
+  }
+
   build() {
-    Stack({ alignContent: Alignment.Top }) {
+    Navigation() {
       Scroll() {
         Column({ space: 14 }) {
           this.heroBuilder()
@@ -360,41 +376,22 @@ export struct MeTab {
             .margin({ top: 8 })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: this.topInset + 88, bottom: this.bottomPad + 16 })
+        .padding({ left: 16, right: 16, bottom: this.bottomPad + 16 })
         .alignItems(HorizontalAlign.Start)
       }
       .width('100%')
+      .contentStartOffset(this.topInset + 54)
       .height('100%')
       .scrollBar(BarState.Off)
-
-      // 固定标题层：毛玻璃区 + 无硬边渐隐尾遮罩（标题不随卡片滚动）
-      Column() {
-        Text($r('app.string.me_title'))
-          .fontSize(26)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 8 })
-          .backgroundEffect({
-            radius: 24,
-            saturation: 1.5,
-            brightness: 1.05,
-            color: $r('app.color.bar_glass')
-          })
-
-        Column()
-          .height(30)
-          .width('100%')
-          .linearGradient({
-            angle: 180,
-            colors: [[$r('app.color.scrim_strong'), 0.0], [$r('app.color.scrim_soft'), 0.5], [$r('app.color.scrim_clear'), 1.0]]
-          })
-          .hitTestBehavior(HitTestMode.None)
-      }
-      .width('100%')
-      .hitTestBehavior(HitTestMode.Transparent)
     }
+    .title({
+      builder: this.titleBarBuilder,
+      height: this.topInset + 54
+    }, {
+      barStyle: BarStyle.STACK,
+      scrollEffectOptions: { scrollEffectType: ScrollEffectType.GRADUAL_BLUR }
+    })
+    .hideBackButton(true)
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))

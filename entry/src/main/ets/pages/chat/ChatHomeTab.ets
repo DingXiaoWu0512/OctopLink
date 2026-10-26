@@ -91,6 +91,8 @@ export struct ChatHomeTab {
   private activeAssistant: ChatMessageModel | null = null;
   private steerPending: ChatMessageModel | null = null;
   private currentTurnId: string = '';
+  /** 本轮流式期间发生过 WS 断线：turn 结束时以服务端权威消息补全，不误标"回复中断" */
+  private turnHadGap: boolean = false;
   private lastConnectedId: string = '';
   private threadCreating: boolean = false;
   private steerClientPendingId: string = '';
@@ -494,9 +496,15 @@ export struct ChatHomeTab {
     };
     controller.callbacks.onTurnStarted = (turnId: string): void => {
       this.currentTurnId = turnId;
+      this.turnHadGap = false;
       this.streamPhase = '正在思考…';
     };
     controller.callbacks.onTurnEnded = (failed: boolean): void => {
+      if (this.turnHadGap) {
+        // 断线期间可能丢失 token 帧：以服务端最终消息补全，不直接信任本地流
+        this.reconcileFinalMessage();
+        return;
+      }
       const m = this.activeAssistant;
       if (m !== null) {
         m.markEnded(failed, failed ? '回复中断' : '');
@@ -516,6 +524,7 @@ export struct ChatHomeTab {
         this.syncDigest(m.text);
       }
       this.activeAssistant = null;
+      this.turnHadGap = false;
       this.streaming = false;
       this.streamPhase = '';
       AppStorage.setOrCreate(SessionStore.KEY_THREADS_DIRTY, true);
@@ -561,6 +570,7 @@ export struct ChatHomeTab {
       const m = ChatMessageModel.streamingAssistant();
       this.messages.push(m);
       this.activeAssistant = m;
+      this.turnHadGap = false;
       this.streaming = true;
       this.streamPhase = '正在思考…';
       this.scrollToBottom(true);
@@ -588,6 +598,7 @@ export struct ChatHomeTab {
         this.syncDigest(m.text);
       }
       this.activeAssistant = null;
+      this.turnHadGap = false;
       this.streaming = false;
       this.streamPhase = '';
       this.hitlSubmitting = false;
@@ -595,16 +606,21 @@ export struct ChatHomeTab {
       this.refreshContextUsage();
     };
     controller.callbacks.onTurnStatus = (active: boolean): void => {
-      // 订阅应答：active=true 服务端仍在输出（弱流恢复续流）；false 且本地在等待恢复则中断
+      // 订阅应答：active=true 服务端仍在输出（弱流恢复续流）；false 且本地在等待恢复则拉取权威结果
       if (!active && this.streaming && this.streamPhase === '恢复续流中…') {
-        const m = this.activeAssistant;
-        if (m !== null) {
-          m.markEnded(true, '回复中断');
-          this.syncDigest(m.text);
+        if (this.turnHadGap) {
+          // 服务端 turn 已结束：完整回复已在服务端线程消息里，REST 拉回替换，不误标"回复中断"
+          this.reconcileFinalMessage();
+        } else {
+          const m = this.activeAssistant;
+          if (m !== null) {
+            m.markEnded(true, '回复中断');
+            this.syncDigest(m.text);
+          }
+          this.activeAssistant = null;
+          this.streaming = false;
+          this.streamPhase = '';
         }
-        this.activeAssistant = null;
-        this.streaming = false;
-        this.streamPhase = '';
       } else if (active && this.streaming) {
         this.streamPhase = '正在生成…';
       }
@@ -618,6 +634,7 @@ export struct ChatHomeTab {
       if (this.streaming) {
         // 弱流恢复：保持消息与流状态，重连后由 turn_status/回放帧续流
         this.streamPhase = '恢复续流中…';
+        this.turnHadGap = true;
       }
       this.scheduleWsReconnect();
     };
@@ -670,11 +687,70 @@ export struct ChatHomeTab {
         this.syncDigest(m.text);
       }
       this.activeAssistant = null;
+      this.turnHadGap = false;
       this.streaming = false;
       this.streamPhase = '';
       return;
     }
     this.scheduleWsReconnect();
+  }
+
+  /** 弱流恢复失败/断线缺口：REST 拉取服务端权威最终消息替换本地流式气泡，避免误标"回复中断" */
+  private async reconcileFinalMessage(): Promise<void> {
+    const m = this.activeAssistant;
+    if (m === null) {
+      return;
+    }
+    const threadId: string = AppStorage.get<string>(SessionStore.KEY_ACTIVE_THREAD_ID) ?? '';
+    const agentId: string = AppStorage.get<string>(SessionStore.KEY_AGENT_ID) ?? '';
+    let failed: boolean = true;
+    let errorMessage: string = '回复中断';
+    if (threadId !== '' && agentId !== '') {
+      try {
+        const result: HistoryResult = await ThreadService.historyFull(agentId, threadId);
+        if (this.activeAssistant !== m) {
+          return;
+        }
+        let server: ChatMessageModel | null = null;
+        for (let i = result.messages.length - 1; i >= 0; i--) {
+          if (result.messages[i].role === ChatRole.ASSISTANT) {
+            server = result.messages[i];
+            break;
+          }
+        }
+        // 时间戳校验：服务端最后一条助手消息须不早于本轮开始（容忍 2 分钟时钟偏差）
+        if (server !== null && server.timestampMs >= m.timestampMs - 120000) {
+          m.text = server.text;
+          m.reasoning = server.reasoning;
+          m.toolNames = server.toolNames;
+          m.toolCalls = server.toolCalls;
+          m.usageIn = server.usageIn;
+          m.usageOut = server.usageOut;
+          if (m.speakerId === '') {
+            m.speakerId = server.speakerId;
+          }
+          if (server.timestampMs > 0) {
+            m.timestampMs = server.timestampMs;
+          }
+          failed = server.failed;
+          errorMessage = server.errorMessage;
+        }
+      } catch (e) {
+        Log.warn('reconcile final message failed, fallback to interrupted');
+      }
+    }
+    if (this.activeAssistant !== m) {
+      return;
+    }
+    m.markEnded(failed, errorMessage);
+    this.syncDigest(m.text);
+    this.activeAssistant = null;
+    this.currentTurnId = '';
+    this.turnHadGap = false;
+    this.streaming = false;
+    this.streamPhase = '';
+    AppStorage.setOrCreate(SessionStore.KEY_THREADS_DIRTY, true);
+    this.refreshContextUsage();
   }
 
   private removeSteerPending(): void {
@@ -778,6 +854,7 @@ export struct ChatHomeTab {
     const m = ChatMessageModel.streamingAssistant();
     this.messages.push(m);
     this.activeAssistant = m;
+    this.turnHadGap = false;
     this.streaming = true;
     this.streamPhase = '正在思考…';
     this.scrollToBottom(true);
@@ -873,6 +950,7 @@ export struct ChatHomeTab {
       m.markEnded(false, '已停止生成');
     }
     this.activeAssistant = null;
+    this.turnHadGap = false;
     this.streaming = false;
     this.hitlSubmitting = false;
     this.streamPhase = '';
@@ -890,6 +968,7 @@ export struct ChatHomeTab {
     const m = ChatMessageModel.streamingAssistant();
     this.messages.push(m);
     this.activeAssistant = m;
+    this.turnHadGap = false;
     this.streaming = true;
     this.streamPhase = '正在生成…';
     this.scrollToBottom(true);
@@ -1818,31 +1897,41 @@ export struct ChatHomeTab {
     })
   }
 
-  build() {
-    Stack({ alignContent: Alignment.Bottom }) {
-      Stack({ alignContent: Alignment.Top }) {
-        // 顶部沉浸光感层：毛玻璃区 + 无硬边渐隐尾遮罩 + 头部操作区
-        Column() {
-          Column() {
-          if (this.wsError !== '') {
-            Row({ space: 6 }) {
-              SymbolGlyph($r('sys.symbol.wifi'))
-                .fontSize(13)
-                .fontColor([$r('app.color.warning')])
-              Text(this.wsError)
-                .fontSize(12)
-                .fontColor($r('app.color.warning'))
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .layoutWeight(1)
-            }
-            .width('100%')
-            .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-            .borderRadius(10)
-            .backgroundColor($r('app.color.warning_soft'))
-            .margin({ left: 16, right: 16, bottom: 4 })
-          }
-          Row({ space: 10 }) {
+  /** 沉浸光感标题栏总高度：状态栏 + 头部横幅（含模型名时更高）+ 断线提示条 */
+  chatTitleHeight(): number {
+    let content: number = 60;
+    if (this.agentModel !== '') {
+      content += 12;
+    }
+    if (this.wsError !== '') {
+      content += 36;
+    }
+    return this.topInset + content;
+  }
+
+  /** 沉浸光感标题栏：静止透底无边条，滚动时系统 GRADUAL_BLUR 渐变模糊 */
+  @Builder
+  chatTitleBuilder() {
+    Column() {
+      if (this.wsError !== '') {
+        Row({ space: 6 }) {
+          SymbolGlyph($r('sys.symbol.wifi'))
+            .fontSize(13)
+            .fontColor([$r('app.color.warning')])
+          Text(this.wsError)
+            .fontSize(12)
+            .fontColor($r('app.color.warning'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+        .borderRadius(10)
+        .backgroundColor($r('app.color.warning_soft'))
+        .margin({ left: 16, right: 16, bottom: 4 })
+      }
+      Row({ space: 10 }) {
         Button({ type: ButtonType.Normal, stateEffect: true }) {
           Row({ space: 8 }) {
             Image($r('app.media.octop_logo'))
@@ -1930,32 +2019,18 @@ export struct ChatHomeTab {
         .onClick((): void => {
           this.navStack.pushPath(new NavPathInfo('sessions', null));
         })
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 8 })
-        }
-        .width('100%')
-        .backgroundEffect({
-          radius: 24,
-          saturation: 1.5,
-          brightness: 1.05,
-          color: $r('app.color.bar_glass')
-        })
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 8 })
+    }
+    .width('100%')
+    .expandSafeArea([SafeAreaType.SYSTEM])
+  }
 
-        Column()
-          .height(30)
-          .width('100%')
-          .linearGradient({
-            angle: 180,
-            colors: [[$r('app.color.scrim_strong'), 0.0], [$r('app.color.scrim_soft'), 0.5], [$r('app.color.scrim_clear'), 1.0]]
-          })
-          .hitTestBehavior(HitTestMode.None)
-        }
-        .width('100%')
-        .hitTestBehavior(HitTestMode.Transparent)
-        .zIndex(2)
-
-      if (!this.historyReady && this.loadError === '') {
+  build() {
+    Stack({ alignContent: Alignment.Bottom }) {
+      Navigation() {
+        if (!this.historyReady && this.loadError === '') {
         Column() {
           LoadingProgress()
             .width(36)
@@ -2029,12 +2104,21 @@ export struct ChatHomeTab {
           }
           .width('100%')
           .height('100%')
-          .padding({ left: 14, right: 14, top: this.topInset + 100, bottom: this.bottomPad + 138 })
+          .padding({ left: 14, right: 14, bottom: this.bottomPad + 138 })
+          .contentStartOffset(this.chatTitleHeight())
           .scrollBar(BarState.Off)
           // 从底部开始布局：打开会话直接显示最新消息（无延迟滚动闪烁），键盘弹出压缩视口时消息仍锚定底部
           .stackFromEnd(this.messages.length > 0)
       }
       }
+      .title({
+        builder: this.chatTitleBuilder,
+        height: this.chatTitleHeight()
+      }, {
+        barStyle: BarStyle.STACK,
+        scrollEffectOptions: { scrollEffectType: ScrollEffectType.GRADUAL_BLUR }
+      })
+      .hideBackButton(true)
       .width('100%')
       .height('100%')
 
