@@ -5,14 +5,16 @@ import { Log } from '../utils/Logger';
 
 const PING_INTERVAL_MS = 30000;
 const PING_FRAME = '{"type":"ping"}';
+const ALIVE_TIMEOUT_MS = 75000;
 
 /**
- * WebSocket 封装：连接、心跳（30s ping）、文本帧收发、关闭回调。
+ * WebSocket 封装：连接、心跳（30s ping）、存活看门狗（超时强制断开）、文本帧收发、关闭回调。
  * 连接阶段的失败以 Promise reject 表达；运行期断开通过 closedHandler 通知。
  */
 export class OctopWsClient {
   private ws: webSocket.WebSocket | null = null;
   private pingTimer: number = -1;
+  private lastAliveMs: number = 0;
   private textMessageHandler: ((text: string) => void) | null = null;
   private closedHandler: ((code: number, reason: string) => void) | null = null;
 
@@ -43,6 +45,7 @@ export class OctopWsClient {
         resolve();
       });
       ws.on('message', (err: BusinessError, value: string | ArrayBuffer) => {
+        this.lastAliveMs = Date.now();
         if (typeof value === 'string' && this.textMessageHandler !== null) {
           this.textMessageHandler(value);
         }
@@ -123,9 +126,15 @@ export class OctopWsClient {
 
   private startPing(): void {
     this.stopPing();
+    this.lastAliveMs = Date.now();
     this.pingTimer = setInterval(() => {
       this.send(PING_FRAME).catch((): void => {
       });
+      // 存活看门狗：超过阈值未收到任何消息视为半开连接，强制断开交给上层重连
+      if (Date.now() - this.lastAliveMs > ALIVE_TIMEOUT_MS) {
+        Log.warn('WS alive watchdog triggered, forcing close');
+        this.forceClose();
+      }
     }, PING_INTERVAL_MS);
   }
 
@@ -133,6 +142,14 @@ export class OctopWsClient {
     if (this.pingTimer !== -1) {
       clearInterval(this.pingTimer);
       this.pingTimer = -1;
+    }
+  }
+
+  /** 看门狗超时强制断开：按运行期断开通知 closedHandler（触发上层重连） */
+  private forceClose(): void {
+    this.closeInternal();
+    if (this.closedHandler !== null) {
+      this.closedHandler(4000, 'alive timeout');
     }
   }
 }

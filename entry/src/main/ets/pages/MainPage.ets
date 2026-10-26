@@ -114,6 +114,7 @@ export struct MainPage {
     .barMode(BarMode.Fixed)
     .barOverlap(true)
     .barHeight(56)
+    .barBackgroundColor(Color.Transparent)
     .barFloatingStyle(this.floatingBarStyle())
     .scrollable(true)
     .vertical(false)

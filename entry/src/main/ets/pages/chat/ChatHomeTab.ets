@@ -76,9 +76,14 @@ export struct ChatHomeTab {
   @State hitlEditOpen: boolean = false;
   @State hitlEditArgs: string = '';
   @State inputMaxWidth: number = 460;
+  @State slashPanelMaxHeight: number = 280;
   @State slashSpecs: Array<SlashCommandSpec> = SlashCommandSpec.fallbackList();
   private controller: ChatStreamController | null = null;
   private connectingPromise: Promise<boolean> | null = null;
+  private wsReconnectTimer: number = -1;
+  private wsReconnectAttempts: number = 0;
+  /** 组件销毁标记：置位后停止一切自动重连 */
+  private wsTeardown: boolean = false;
   private scroller: Scroller = new Scroller();
   private lastScrollMs: number = 0;
   /** 切专家清空活跃线程时置位：onThreadChanged 转 loadRecentThread 而非欢迎态 */
@@ -113,6 +118,8 @@ export struct ChatHomeTab {
   }
 
   aboutToDisappear(): void {
+    this.wsTeardown = true;
+    this.cancelWsReconnect();
     this.teardownStream();
   }
 
@@ -416,6 +423,7 @@ export struct ChatHomeTab {
   }
 
   private teardownStream(): void {
+    this.cancelWsReconnect();
     const c = this.controller;
     if (c !== null) {
       c.close();
@@ -603,24 +611,59 @@ export struct ChatHomeTab {
     };
     controller.callbacks.onConnectionClosed = (code: number, reason: string): void => {
       Log.warn(`WS connection closed: ${code} ${reason}`);
-      this.wsError = '实时通道已断开，发送消息时将自动重连';
-      if (this.streaming) {
-        // 弱流恢复：保持消息与流状态，稍后重连（subscribe 回放追赶帧 + turn_status）
-        this.streamPhase = '恢复续流中…';
-        setTimeout((): void => {
-          this.recoverConnection();
-        }, 1500);
+      if (this.wsTeardown) {
+        return;
       }
+      this.wsError = '实时通道已断开，正在自动重连…';
+      if (this.streaming) {
+        // 弱流恢复：保持消息与流状态，重连后由 turn_status/回放帧续流
+        this.streamPhase = '恢复续流中…';
+      }
+      this.scheduleWsReconnect();
     };
   }
 
-  /** 弱流恢复重连：成功后由 turn_status/回放帧继续续流 */
-  private async recoverConnection(): Promise<void> {
-    if (!this.streaming) {
+  /** 断线自动重连：指数退避 2s 起步、30s 封顶，成功后清零计数 */
+  private scheduleWsReconnect(): void {
+    if (this.wsTeardown) {
+      return;
+    }
+    this.cancelWsReconnect();
+    const threadId: string = AppStorage.get<string>(SessionStore.KEY_ACTIVE_THREAD_ID) ?? '';
+    const agentId: string = AppStorage.get<string>(SessionStore.KEY_AGENT_ID) ?? '';
+    if (threadId === '' || agentId === '') {
+      return;
+    }
+    const delayMs: number = Math.min(2000 * Math.pow(2, this.wsReconnectAttempts), 30000);
+    this.wsReconnectAttempts++;
+    this.wsReconnectTimer = setTimeout((): void => {
+      this.wsReconnectTimer = -1;
+      this.reconnectWs();
+    }, delayMs);
+  }
+
+  private cancelWsReconnect(): void {
+    if (this.wsReconnectTimer !== -1) {
+      clearTimeout(this.wsReconnectTimer);
+      this.wsReconnectTimer = -1;
+    }
+  }
+
+  private async reconnectWs(): Promise<void> {
+    if (this.wsTeardown) {
       return;
     }
     const ok: boolean = await this.connectWs();
-    if (!ok && this.streaming) {
+    if (this.wsTeardown) {
+      return;
+    }
+    if (ok) {
+      this.wsReconnectAttempts = 0;
+      this.wsError = '';
+      return;
+    }
+    // 流式中的弱流恢复连续失败：标记中断，不再无限等待
+    if (this.streaming && this.wsReconnectAttempts >= 4) {
       const m = this.activeAssistant;
       if (m !== null) {
         m.markEnded(true, '网络连接中断');
@@ -629,7 +672,9 @@ export struct ChatHomeTab {
       this.activeAssistant = null;
       this.streaming = false;
       this.streamPhase = '';
+      return;
     }
+    this.scheduleWsReconnect();
   }
 
   private removeSteerPending(): void {
@@ -751,10 +796,18 @@ export struct ChatHomeTab {
 
   /** Steer 追问：本地先插入用户消息，ack rejected 时移除并提示 */
   private async sendSteer(text: string): Promise<void> {
-    const controller = this.controller;
+    let controller = this.controller;
     if (controller === null || !controller.connected) {
-      this.wsError = '连接已断开，无法追加消息';
-      return;
+      // 断线追问：先自动重连一次，仍失败才放弃
+      const reconnected: boolean = await this.connectWs();
+      if (!reconnected) {
+        this.wsError = '连接已断开，无法追加消息';
+        return;
+      }
+      controller = this.controller;
+      if (controller === null) {
+        return;
+      }
     }
     if (this.currentTurnId === '') {
       this.getUIContext().getPromptAction().showToast({ message: '正在等待回复开始，请稍候' });
@@ -1243,16 +1296,15 @@ export struct ChatHomeTab {
       }
       .width('100%')
     }
-    .constraintSize({ maxHeight: 280 })
     .scrollBar(BarState.Off)
     .width('100%')
     .padding({ left: 6, right: 6, top: 2, bottom: 6 })
     .borderRadius(14)
     .backgroundColor($r('app.color.bg_card'))
-    .systemMaterial(UiMaterialKit.panel())
     .border({ width: 1, color: $r('app.color.card_stroke') })
     .shadow({ radius: 12, color: '#1205243F', offsetX: 0, offsetY: 4 })
-    .constraintSize({ maxWidth: this.inputMaxWidth })
+    // 注意：constraintSize 只能调用一次，二次调用会整体覆盖前者（maxHeight 必须与 maxWidth 合并声明）
+    .constraintSize({ maxHeight: this.slashPanelMaxHeight, maxWidth: this.inputMaxWidth })
     .margin({ left: 12, right: 12, bottom: 4 })
   }
 
@@ -1883,7 +1935,20 @@ export struct ChatHomeTab {
         .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 8 })
         }
         .width('100%')
-        .systemMaterial(UiMaterialKit.titleBar())
+        .linearGradient({
+          angle: 180,
+          colors: [[$r('app.color.bar_glass'), 0.0], [$r('app.color.bar_glass'), 1.0]]
+        })
+        .backgroundBlurStyle(BlurStyle.Thin)
+
+        Column()
+          .height(30)
+          .width('100%')
+          .linearGradient({
+            angle: 180,
+            colors: [[$r('app.color.scrim_strong'), 0.0], [$r('app.color.scrim_soft'), 0.5], [$r('app.color.scrim_clear'), 1.0]]
+          })
+          .hitTestBehavior(HitTestMode.None)
         }
         .width('100%')
         .hitTestBehavior(HitTestMode.Transparent)
@@ -1963,7 +2028,7 @@ export struct ChatHomeTab {
           }
           .width('100%')
           .height('100%')
-          .padding({ left: 14, right: 14, top: this.topInset + 74, bottom: this.bottomPad + 138 })
+          .padding({ left: 14, right: 14, top: this.topInset + 100, bottom: this.bottomPad + 138 })
           .scrollBar(BarState.Off)
           // 从底部开始布局：打开会话直接显示最新消息（无延迟滚动闪烁），键盘弹出压缩视口时消息仍锚定底部
           .stackFromEnd(this.messages.length > 0)
@@ -2220,5 +2285,9 @@ export struct ChatHomeTab {
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      // 斜杠面板高度上限 = 半屏（用户要求），避免大面积遮挡
+      this.slashPanelMaxHeight = Math.max(200, Number(newArea.height) / 2);
+    })
   }
 }

@@ -84,7 +84,6 @@ export class ChatStreamController {
   private threadId: string;
   private activeSse: SseClient | null = null;
   private pendingHitl: HitlRequestModel | null = null;
-  private pingTimer: number = -1;
   readonly callbacks: StreamCallbacks = new StreamCallbacks();
 
   constructor(agentId: string, threadId: string) {
@@ -101,7 +100,6 @@ export class ChatStreamController {
       this.handleFrame(text);
     });
     this.ws.setClosedHandler((code: number, reason: string): void => {
-      this.stopHeartbeat();
       this.callbacks.onConnectionClosed(code, reason);
     });
     const baseUrl: string = HttpClient.getInstance().getBaseUrl();
@@ -114,31 +112,6 @@ export class ChatStreamController {
       'thread_id': this.threadId
     };
     await this.ws.send(JSON.stringify(subscribe));
-    this.startHeartbeat();
-  }
-
-  /** 25s 心跳（服务端回 pong），保持长连接与中间设备存活 */
-  private startHeartbeat(): void {
-    this.stopHeartbeat();
-    this.pingTimer = setInterval((): void => {
-      this.sendPing();
-    }, 25000);
-  }
-
-  private stopHeartbeat(): void {
-    if (this.pingTimer >= 0) {
-      clearInterval(this.pingTimer);
-      this.pingTimer = -1;
-    }
-  }
-
-  async sendPing(): Promise<void> {
-    const frame: Record<string, Object> = { 'type': 'ping' };
-    try {
-      await this.ws.send(JSON.stringify(frame));
-    } catch (e) {
-      Log.debug('ping send failed, connection may be lost');
-    }
   }
 
   async sendUserTurn(text: string, attachments?: Array<ChatAttachmentModel>,
@@ -297,7 +270,6 @@ export class ChatStreamController {
   }
 
   close(): void {
-    this.stopHeartbeat();
     this.ws.close();
   }
 
