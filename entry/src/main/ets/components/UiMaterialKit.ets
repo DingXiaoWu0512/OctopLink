@@ -56,6 +56,30 @@ export class UiMaterialKit {
     });
   }
 
+  /** 固定标题层：薄玻璃 + 自动补色（无投影），置于滚动内容之上；不支持返回 Material.empty（保留原底色降级） */
+  static titleBar(): uiMaterial.Material {
+    if (!UiMaterialKit.isSupported()) {
+      return uiMaterial.Material.empty;
+    }
+    return new uiMaterial.ImmersiveMaterial({
+      style: uiMaterial.ImmersiveStyle.THIN,
+      colorInvert: true,
+      applyShadow: false
+    });
+  }
+
+  /** 弹出面板/下拉菜单：常规厚度 + 自动补色 + 系统投影；不支持返回 Material.empty */
+  static panel(): uiMaterial.Material {
+    if (!UiMaterialKit.isSupported()) {
+      return uiMaterial.Material.empty;
+    }
+    return new uiMaterial.ImmersiveMaterial({
+      style: uiMaterial.ImmersiveStyle.REGULAR,
+      colorInvert: true,
+      applyShadow: true
+    });
+  }
+
   /** 大面积玻璃卡片（可点击）：薄玻璃 + 自动补色 + 系统投影 + 交互形变；不支持返回 Material.empty */
   static card(): uiMaterial.Material {
     if (!UiMaterialKit.isSupported()) {

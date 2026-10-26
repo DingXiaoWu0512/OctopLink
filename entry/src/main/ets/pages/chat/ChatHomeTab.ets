@@ -76,7 +76,6 @@ export struct ChatHomeTab {
   @State hitlEditOpen: boolean = false;
   @State hitlEditArgs: string = '';
   @State inputMaxWidth: number = 460;
-  @State slashPanelMaxHeight: number = 280;
   @State slashSpecs: Array<SlashCommandSpec> = SlashCommandSpec.fallbackList();
   private controller: ChatStreamController | null = null;
   private connectingPromise: Promise<boolean> | null = null;
@@ -1149,23 +1148,6 @@ export struct ChatHomeTab {
     return $r('app.color.brand');
   }
 
-  /** tone → 柔和底色 */
-  private slashToneBg(tone: string): Resource {
-    if (tone === 'emerald') {
-      return $r('app.color.success_soft');
-    }
-    if (tone === 'rose') {
-      return $r('app.color.danger_soft');
-    }
-    if (tone === 'amber' || tone === 'orange') {
-      return $r('app.color.warning_soft');
-    }
-    if (tone === 'slate') {
-      return $r('app.color.bg_input');
-    }
-    return $r('app.color.brand_light');
-  }
-
   /** 选中命令：客户端动作本地执行；需参数预填；其余直接发送（与 Web 端 runSlashCommand 对齐） */
   private runSlashCommand(spec: SlashCommandSpec): void {
     if (spec.clientAction === 'new_chat') {
@@ -1203,68 +1185,71 @@ export struct ChatHomeTab {
     }
     return null;
   }
-  /** 斜杠命令候选面板（输入 "/" 时展示在输入框上方，按分类分组） */
+  /** 斜杠命令候选面板（输入 "/" 时展示在输入框上方：紧凑双列网格，与 Web 端 slashMenu 同构） */
   @Builder
   private slashPanelBuilder() {
     Scroll() {
       Column() {
         ForEach(this.matchingSlashGroups(), (group: SlashGroup) => {
           Text(group.label)
-            .fontSize(11)
+            .fontSize(10)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.text_tertiary'))
             .width('100%')
             .textAlign(TextAlign.Start)
-            .padding({ left: 12, top: 6, bottom: 3 })
-          ForEach(group.items, (spec: SlashCommandSpec) => {
-            Row({ space: 10 }) {
-              Column() {
-                SymbolGlyph(this.slashIcon(spec.icon))
-                  .fontSize(15)
-                  .fontColor([this.slashToneColor(spec.tone)])
-              }
-              .width(28)
-              .height(28)
-              .borderRadius(9)
-              .backgroundColor(this.slashToneBg(spec.tone))
-              .justifyContent(FlexAlign.Center)
-              Column({ space: 1 }) {
-                Text(spec.label())
-                  .fontSize(14)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor($r('app.color.text_primary'))
-                if (spec.description() !== '') {
-                  Text(spec.description())
-                    .fontSize(11)
+            .padding({ left: 8, top: 6, bottom: 3 })
+          Grid() {
+            ForEach(group.items, (spec: SlashCommandSpec) => {
+              GridItem() {
+                Column({ space: 4 }) {
+                  Row({ space: 6 }) {
+                    SymbolGlyph(this.slashIcon(spec.icon))
+                      .fontSize(14)
+                      .fontColor([this.slashToneColor(spec.tone)])
+                    Text(spec.label())
+                      .fontSize(12)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor($r('app.color.text_primary'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .layoutWeight(1)
+                  }
+                  .width('100%')
+                  Text(spec.commandToken())
+                    .fontSize(10)
                     .fontColor($r('app.color.text_tertiary'))
+                    .fontFamily('monospace')
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .padding({ left: 5, right: 5, top: 1, bottom: 1 })
+                    .borderRadius(4)
+                    .backgroundColor($r('app.color.bg_input'))
                 }
+                .alignItems(HorizontalAlign.Start)
+                .width('100%')
+                .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+                .borderRadius(10)
+                .onClick((): void => {
+                  this.runSlashCommand(spec);
+                })
               }
-              .layoutWeight(1)
-              .alignItems(HorizontalAlign.Start)
-              Text(spec.commandToken())
-                .fontSize(11)
-                .fontColor($r('app.color.text_tertiary'))
-                .fontFamily('monospace')
-            }
-            .width('100%')
-            .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-            .borderRadius(12)
-            .onClick((): void => {
-              this.runSlashCommand(spec);
-            })
-          }, (spec: SlashCommandSpec) => spec.name)
+            }, (spec: SlashCommandSpec) => spec.name)
+          }
+          .columnsTemplate('1fr 1fr')
+          .columnsGap(6)
+          .rowsGap(4)
+          .width('100%')
         }, (group: SlashGroup) => group.category)
       }
       .width('100%')
     }
-    .constraintSize({ maxHeight: this.slashPanelMaxHeight })
+    .constraintSize({ maxHeight: 280 })
     .scrollBar(BarState.Off)
     .width('100%')
-    .padding(6)
-    .borderRadius(18)
+    .padding({ left: 6, right: 6, top: 2, bottom: 6 })
+    .borderRadius(14)
     .backgroundColor($r('app.color.bg_card'))
+    .systemMaterial(UiMaterialKit.panel())
     .border({ width: 1, color: $r('app.color.card_stroke') })
     .shadow({ radius: 12, color: '#1205243F', offsetX: 0, offsetY: 4 })
     .constraintSize({ maxWidth: this.inputMaxWidth })
@@ -1898,20 +1883,7 @@ export struct ChatHomeTab {
         .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 8 })
         }
         .width('100%')
-        .linearGradient({
-          angle: 180,
-          colors: [[$r('app.color.bar_glass'), 0.0], [$r('app.color.bar_glass'), 1.0]]
-        })
-        .backgroundBlurStyle(BlurStyle.Thin)
-
-        Column()
-          .height(30)
-          .width('100%')
-          .linearGradient({
-            angle: 180,
-            colors: [[$r('app.color.scrim_strong'), 0.0], [$r('app.color.scrim_soft'), 0.5], [$r('app.color.scrim_clear'), 1.0]]
-          })
-          .hitTestBehavior(HitTestMode.None)
+        .systemMaterial(UiMaterialKit.titleBar())
         }
         .width('100%')
         .hitTestBehavior(HitTestMode.Transparent)
@@ -1991,7 +1963,7 @@ export struct ChatHomeTab {
           }
           .width('100%')
           .height('100%')
-          .padding({ left: 14, right: 14, top: this.topInset + 100, bottom: this.bottomPad + 138 })
+          .padding({ left: 14, right: 14, top: this.topInset + 74, bottom: this.bottomPad + 138 })
           .scrollBar(BarState.Off)
           // 从底部开始布局：打开会话直接显示最新消息（无延迟滚动闪烁），键盘弹出压缩视口时消息仍锚定底部
           .stackFromEnd(this.messages.length > 0)
@@ -2248,8 +2220,5 @@ export struct ChatHomeTab {
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .onAreaChange((oldArea: Area, newArea: Area): void => {
-      this.slashPanelMaxHeight = Number(newArea.height) / 2;
-    })
   }
 }
