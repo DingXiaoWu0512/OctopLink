@@ -109,6 +109,18 @@
       "value": "#CC1B1D23"
     },
     {
+      "name": "scrim_strong",
+      "value": "#F00E0F11"
+    },
+    {
+      "name": "scrim_soft",
+      "value": "#800E0F11"
+    },
+    {
+      "name": "scrim_clear",
+      "value": "#000E0F11"
+    },
+    {
       "name": "nav_pill",
       "value": "#333D7FFF"
     },

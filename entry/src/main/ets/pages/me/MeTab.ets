@@ -360,34 +360,46 @@ export struct MeTab {
             .margin({ top: 8 })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: this.topInset + 84, bottom: this.bottomPad + 16 })
+        .padding({ left: 16, right: 16, top: this.topInset + 112, bottom: this.bottomPad + 16 })
         .alignItems(HorizontalAlign.Start)
       }
       .width('100%')
       .height('100%')
       .scrollBar(BarState.Off)
 
-      // 固定标题层：沉浸光感模糊渐变（标题不随卡片滚动）
-      Column({ space: 4 }) {
-        Text($r('app.string.me_title'))
-          .fontSize(26)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
+      // 固定标题层：毛玻璃区 + 无硬边渐隐尾遮罩（标题不随卡片滚动）
+      Column() {
+        Column({ space: 4 }) {
+          Text($r('app.string.me_title'))
+            .fontSize(26)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+            .textAlign(TextAlign.Start)
+          Text('账号与服务管理')
+            .fontSize(13)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+            .textAlign(TextAlign.Start)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 8 })
+        .linearGradient({
+          angle: 180,
+          colors: [[$r('app.color.bar_glass'), 0.0], [$r('app.color.bar_glass'), 1.0]]
+        })
+        .backgroundBlurStyle(BlurStyle.Thin)
+
+        Column()
+          .height(30)
           .width('100%')
-          .textAlign(TextAlign.Start)
-        Text('账号与服务管理')
-          .fontSize(13)
-          .fontColor($r('app.color.text_tertiary'))
-          .width('100%')
-          .textAlign(TextAlign.Start)
+          .linearGradient({
+            angle: 180,
+            colors: [[$r('app.color.scrim_strong'), 0.0], [$r('app.color.scrim_soft'), 0.5], [$r('app.color.scrim_clear'), 1.0]]
+          })
+          .hitTestBehavior(HitTestMode.None)
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 14 })
-      .linearGradient({
-        angle: 180,
-        colors: [[$r('app.color.bar_glass'), 0.0], [$r('app.color.bar_glass'), 0.55], [Color.Transparent, 1.0]]
-      })
-      .backgroundBlurStyle(BlurStyle.Thin)
       .hitTestBehavior(HitTestMode.Transparent)
     }
     .width('100%')

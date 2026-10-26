@@ -76,6 +76,7 @@ export struct ChatHomeTab {
   @State hitlEditOpen: boolean = false;
   @State hitlEditArgs: string = '';
   @State inputMaxWidth: number = 460;
+  @State slashPanelMaxHeight: number = 280;
   @State slashSpecs: Array<SlashCommandSpec> = SlashCommandSpec.fallbackList();
   private controller: ChatStreamController | null = null;
   private connectingPromise: Promise<boolean> | null = null;
@@ -1258,7 +1259,7 @@ export struct ChatHomeTab {
       }
       .width('100%')
     }
-    .constraintSize({ maxHeight: 280 })
+    .constraintSize({ maxHeight: this.slashPanelMaxHeight })
     .scrollBar(BarState.Off)
     .width('100%')
     .padding(6)
@@ -1783,8 +1784,9 @@ export struct ChatHomeTab {
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
       Stack({ alignContent: Alignment.Top }) {
-        // 顶部沉浸光感层：模糊渐变 + 连接异常条 + 头部操作区
+        // 顶部沉浸光感层：毛玻璃区 + 无硬边渐隐尾遮罩 + 头部操作区
         Column() {
+          Column() {
           if (this.wsError !== '') {
             Row({ space: 6 }) {
               SymbolGlyph($r('sys.symbol.wifi'))
@@ -1891,17 +1893,27 @@ export struct ChatHomeTab {
         .onClick((): void => {
           this.navStack.pushPath(new NavPathInfo('sessions', null));
         })
-      }
+        }
         .width('100%')
         .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 8 })
         }
         .width('100%')
-        .padding({ bottom: 18 })
         .linearGradient({
           angle: 180,
-          colors: [[$r('app.color.bar_glass'), 0.0], [$r('app.color.bar_glass'), 0.62], [Color.Transparent, 1.0]]
+          colors: [[$r('app.color.bar_glass'), 0.0], [$r('app.color.bar_glass'), 1.0]]
         })
         .backgroundBlurStyle(BlurStyle.Thin)
+
+        Column()
+          .height(30)
+          .width('100%')
+          .linearGradient({
+            angle: 180,
+            colors: [[$r('app.color.scrim_strong'), 0.0], [$r('app.color.scrim_soft'), 0.5], [$r('app.color.scrim_clear'), 1.0]]
+          })
+          .hitTestBehavior(HitTestMode.None)
+        }
+        .width('100%')
         .hitTestBehavior(HitTestMode.Transparent)
         .zIndex(2)
 
@@ -1979,7 +1991,7 @@ export struct ChatHomeTab {
           }
           .width('100%')
           .height('100%')
-          .padding({ left: 14, right: 14, top: this.topInset + 66, bottom: this.bottomPad + 138 })
+          .padding({ left: 14, right: 14, top: this.topInset + 100, bottom: this.bottomPad + 138 })
           .scrollBar(BarState.Off)
           // 从底部开始布局：打开会话直接显示最新消息（无延迟滚动闪烁），键盘弹出压缩视口时消息仍锚定底部
           .stackFromEnd(this.messages.length > 0)
@@ -1991,13 +2003,12 @@ export struct ChatHomeTab {
       // 底部沉浸层：渐变过渡 + 输入区
       Column() {
         Column()
-          .height(26)
+          .height(30)
           .width('100%')
           .linearGradient({
             angle: 180,
-            colors: [[Color.Transparent, 0.0], [$r('app.color.bar_glass'), 1.0]]
+            colors: [[$r('app.color.scrim_clear'), 0.0], [$r('app.color.scrim_soft'), 0.5], [$r('app.color.scrim_strong'), 1.0]]
           })
-          .backgroundBlurStyle(BlurStyle.Thin)
           .hitTestBehavior(HitTestMode.None)
 
       if (this.streaming && this.streamPhase !== '') {
@@ -2237,5 +2248,8 @@ export struct ChatHomeTab {
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .onAreaChange((oldArea: Area, newArea: Area): void => {
+      this.slashPanelMaxHeight = Number(newArea.height) / 2;
+    })
   }
 }
