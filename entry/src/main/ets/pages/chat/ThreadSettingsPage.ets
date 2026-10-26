@@ -1,10 +1,10 @@
 import { ThreadModel } from '../../model/ThreadModels';
 import { ThreadService } from '../../service/ThreadService';
 import { OctopApiError } from '../../net/HttpClient';
+import { UiMaterialKit } from '../../components/UiMaterialKit';
 import { PageHeader } from '../../components/PageHeader';
 import { ErrorRetry } from '../../components/ErrorRetry';
 import { ModelPickerSheet } from '../../components/ModelPickerSheet';
-import { UiMaterialKit } from '../../components/UiMaterialKit';
 
 /** 路由参数：目标会话 */
 export class ThreadSettingsNavParam {
@@ -245,7 +245,6 @@ export struct ThreadSettingsPage {
                 .padding({ left: 14, right: 10 })
                 .borderRadius(14)
                 .backgroundColor($r('app.color.bg_input'))
-                .systemMaterial(UiMaterialKit.button())
                 .width('100%')
                 .onClick((): void => {
                   this.modelSheetOpen = true;

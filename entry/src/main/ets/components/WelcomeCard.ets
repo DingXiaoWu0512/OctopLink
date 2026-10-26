@@ -1,4 +1,3 @@
-import { UiMaterialKit } from './UiMaterialKit';
 
 /** 空会话欢迎卡片：欢迎语 + 快捷提示 chips */
 @Component
@@ -55,7 +54,6 @@ export struct WelcomeCard {
             .borderRadius(18)
             .padding({ left: 14, right: 14, top: 8, bottom: 8 })
             .margin(4)
-            .systemMaterial(UiMaterialKit.button())
             .onClick((): void => {
               this.onPromptClick(prompt);
             })

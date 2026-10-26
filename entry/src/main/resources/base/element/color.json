@@ -110,11 +110,11 @@
     },
     {
       "name": "scrim_strong",
-      "value": "#F0F4F5F8"
+      "value": "#8CF4F5F8"
     },
     {
       "name": "scrim_soft",
-      "value": "#80F4F5F8"
+      "value": "#40F4F5F8"
     },
     {
       "name": "scrim_clear",
@@ -135,6 +135,18 @@
     {
       "name": "swipe_delete",
       "value": "#33FA5151"
+    },
+    {
+      "name": "card_glass",
+      "value": "#99FFFFFF"
+    },
+    {
+      "name": "panel_glass",
+      "value": "#4DFFFFFF"
+    },
+    {
+      "name": "fab_glass",
+      "value": "#B3FFFFFF"
     }
   ]
 }

@@ -8,6 +8,7 @@ import { HttpClient, OctopApiError } from '../../net/HttpClient';
 import { UrlUtil } from '../../utils/UrlUtil';
 import { PageHeader } from '../../components/PageHeader';
 import { SettingsRow } from '../../components/SettingsRow';
+import { UiMaterialKit } from '../../components/UiMaterialKit';
 
 /** 服务器设置：服务器地址（可编辑）/只读服务器信息/HITL/移动端能力/验证码（管理员） */
 @Component
@@ -523,6 +524,7 @@ export struct SettingsPage {
           .width('100%')
           .scrollBar(BarState.Off)
           .bindSheet($$this.serverSheetOpen, this.serverSheetBuilder, {
+            systemMaterial: UiMaterialKit.sheet(),
             height: 300,
             showClose: true,
             onDisappear: (): void => {

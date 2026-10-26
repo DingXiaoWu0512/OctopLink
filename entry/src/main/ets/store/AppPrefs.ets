@@ -7,6 +7,7 @@ const KEY_USERNAME = 'username';
 const KEY_DISPLAY_NAME = 'display_name';
 const KEY_ROLE = 'role';
 const KEY_APPEARANCE = 'appearance_mode';
+const KEY_IMMERSIVE = 'immersive_light';
 
 /** 本地持久化的用户资料（仅展示用途，敏感数据不落盘） */
 export class UserProfilePref {
@@ -63,6 +64,31 @@ export class AppPrefs {
     const displayName = await this.getString(KEY_DISPLAY_NAME);
     const role = await this.getString(KEY_ROLE);
     return new UserProfilePref(username, displayName, role);
+  }
+
+  async getImmersiveLight(): Promise<boolean> {
+    if (this.store === null) {
+      return true;
+    }
+    try {
+      const v = await this.store.get(KEY_IMMERSIVE, true);
+      return v === true;
+    } catch (e) {
+      Log.error('get immersive light failed');
+      return true;
+    }
+  }
+
+  async setImmersiveLight(on: boolean): Promise<void> {
+    if (this.store === null) {
+      return;
+    }
+    try {
+      await this.store.put(KEY_IMMERSIVE, on);
+      await this.store.flush();
+    } catch (e) {
+      Log.error('set immersive light failed');
+    }
   }
 
   async getAppearance(): Promise<string> {

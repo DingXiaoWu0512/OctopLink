@@ -1,5 +1,6 @@
 import { window, uiMaterial } from '@kit.ArkUI';
 import { resourceManager } from '@kit.LocalizationKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SessionStore } from '../store/SessionStore';
 import { UiMaterialKit } from '../components/UiMaterialKit';
 import { ExpertListPage } from './expert/ExpertListPage';
@@ -11,11 +12,15 @@ import { MeTab } from './me/MeTab';
 @Component
 export struct MainPage {
   @StorageLink(SessionStore.KEY_MAIN_TAB) mainTab: number = 0;
+  @StorageLink('immersive.light.on') immersiveOn: boolean = true;
   @StorageLink(SessionStore.KEY_ACTIVE_THREAD_ID) @Watch('onThreadPicked') activeThreadId: string = '';
   @State topInset: number = 0;
   @State bottomInset: number = 0;
 
   aboutToAppear(): void {
+    hilog.info(0x0000, 'OctopUiMaterial',
+      'supported=%{public}s level=%{public}d',
+      UiMaterialKit.isSupported().toString(), uiMaterial.getGlobalMaterialLevel());
     const ui = this.getUIContext();
     window.getLastWindow(getContext(this)).then((win: window.Window) => {
       this.topInset = ui.px2vp(win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM).topRect.height);
@@ -52,11 +57,13 @@ export struct MainPage {
       mediumBarWidth: 380,
       largeBarWidth: 460
     };
-    const mat: uiMaterial.ImmersiveMaterial | null = UiMaterialKit.navBarMaterial();
+    const mat: uiMaterial.ImmersiveMaterial | null = this.immersiveOn ? UiMaterialKit.navBarMaterial() : null;
     if (mat !== null) {
       const style: FloatingTabBarStyle = {
         barWidth: barWidth,
         barBottomMargin: this.floatingBarBottomMargin(),
+        maskColor: '#00000000',
+        maskHeight: 0,
         systemMaterial: mat
       };
       return style;

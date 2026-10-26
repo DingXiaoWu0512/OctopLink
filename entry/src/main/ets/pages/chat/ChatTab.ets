@@ -5,10 +5,10 @@ import { OctopApiError } from '../../net/HttpClient';
 import { ThreadModel } from '../../model/ThreadModels';
 import { EmptyView } from '../../components/EmptyView';
 import { ErrorRetry } from '../../components/ErrorRetry';
+import { UiMaterialKit } from '../../components/UiMaterialKit';
 import { ThreadRenameDialog } from '../../components/ThreadRenameDialog';
 import { ThreadSettingsNavParam } from './ThreadSettingsPage';
 import { TimeFormat } from '../../utils/TimeFormat';
-import { UiMaterialKit } from '../../components/UiMaterialKit';
 import { ThreadDigestCache } from '../../utils/ThreadDigestCache';
 
 /** 会话分组（置顶无表头 / 今天 / 昨天 / 7天内 / 更早） */
@@ -229,7 +229,8 @@ export struct SessionsTab {
           this.renameThread(thread.threadId, name);
         }
       }),
-      autoCancel: true
+      autoCancel: true,
+      systemMaterial: UiMaterialKit.sheet()
     });
     this.renameController.open();
   }
@@ -623,9 +624,9 @@ export struct SessionsTab {
       }
       .width(58)
       .height(58)
-      .backgroundColor($r('app.color.bg_card'))
+      .backgroundColor($r('app.color.fab_glass'))
+      .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
       .border({ width: 1, color: $r('app.color.card_stroke') })
-      .systemMaterial(UiMaterialKit.button())
       .margin({ left: 22, right: 22, bottom: this.bottomPad })
       .onClick((): void => {
         this.startNewChat();

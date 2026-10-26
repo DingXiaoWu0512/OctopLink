@@ -581,9 +581,10 @@ export struct ChannelPage {
         .fontColor($r('app.color.text_primary'))
         .selectedOptionFont({ size: 14 })
         .optionFont({ size: 14 })
-        .backgroundColor($r('app.color.bg_input'))
+        .backgroundColor(Color.Transparent)
         .borderRadius(12)
         .width('100%')
+        .systemMaterial(UiMaterialKit.button())
         .onSelect((index: number, text: string): void => {
           this.kindIndex = index;
         })
@@ -816,6 +817,7 @@ export struct ChannelPage {
         .width('100%')
         .height('100%')
         .bindSheet($$this.sheetOpen, this.sheetSwitchBuilder, {
+          systemMaterial: UiMaterialKit.sheet(),
           detents: [SheetSize.MEDIUM, SheetSize.LARGE],
           showClose: true,
           onDisappear: (): void => {
@@ -835,9 +837,9 @@ export struct ChannelPage {
         }
         .width(58)
         .height(58)
-        .backgroundColor($r('app.color.bg_card'))
+        .backgroundColor($r('app.color.fab_glass'))
+        .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
         .border({ width: 1, color: $r('app.color.card_stroke') })
-        .systemMaterial(UiMaterialKit.button())
         .margin(22)
         .onClick((): void => {
           this.qrPlatformIndex = -1;

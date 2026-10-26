@@ -3,7 +3,6 @@ import { OctopApiError } from '../net/HttpClient';
 import { AuthService } from '../service/AuthService';
 import { SessionStore } from '../store/SessionStore';
 import { UrlUtil } from '../utils/UrlUtil';
-import { UiMaterialKit } from '../components/UiMaterialKit';
 
 @Component
 export struct LoginPage {
@@ -152,7 +151,6 @@ export struct LoginPage {
             .borderRadius(24)
             .backgroundColor($r('app.color.brand_light'))
             .fontColor($r('app.color.brand'))
-            .systemMaterial(UiMaterialKit.button())
             .margin({ top: 10 })
             .enabled(!this.loading)
             .onClick((): void => {

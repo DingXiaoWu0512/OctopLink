@@ -18,6 +18,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { SessionStore } from '../store/SessionStore';
 import { AppearanceStore } from '../store/AppearanceStore';
+import { UiMaterialKit } from '../components/UiMaterialKit';
 
 const DOMAIN = 0x0000;
 
@@ -49,7 +50,8 @@ export default class EntryAbility extends UIAbility {
 
     // 先恢复本地会话（安全存储 token + 偏好服务器地址 + 外观模式），再加载首页，避免登录态闪变
     SessionStore.restore(this.context).then((): void => {
-      AppearanceStore.restore(this.context).then((): void => {
+      AppearanceStore.restore(this.context).then(async (): Promise<void> => {
+        await UiMaterialKit.restore(this.context);
         windowStage.loadContent('pages/Index', (err) => {
           if (err.code) {
             hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));

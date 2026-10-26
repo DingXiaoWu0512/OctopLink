@@ -10,6 +10,7 @@ import { SessionStore } from '../../store/SessionStore';
 import { EmptyView } from '../../components/EmptyView';
 import { ErrorRetry } from '../../components/ErrorRetry';
 import { PageHeader } from '../../components/PageHeader';
+import { UiMaterialKit } from '../../components/UiMaterialKit';
 
 /** 插件管理：全局插件（启停/卸载/市场/URL 安装/重载）+ 此专家插件开关与工具配置 */
 @Component
@@ -536,6 +537,7 @@ export struct PluginPage {
           .width('100%')
           .scrollBar(BarState.Off)
           .bindSheet($$this.sheetOpen, this.sheetSwitchBuilder, {
+            systemMaterial: UiMaterialKit.sheet(),
             detents: [SheetSize.MEDIUM, SheetSize.LARGE],
             showClose: true,
             onDisappear: (): void => {

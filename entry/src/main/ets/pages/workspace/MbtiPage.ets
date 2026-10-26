@@ -4,6 +4,7 @@ import { OctopApiError } from '../../net/HttpClient';
 import { SessionStore } from '../../store/SessionStore';
 import { ErrorRetry } from '../../components/ErrorRetry';
 import { PageHeader } from '../../components/PageHeader';
+import { UiMaterialKit } from '../../components/UiMaterialKit';
 
 /** MBTI 人格：28 题测试流程 + 16 类型浏览并应用到当前专家 */
 @Component
@@ -341,6 +342,7 @@ export struct MbtiPage {
     .width('100%')
     .scrollBar(BarState.Off)
     .bindSheet(this.detailOpen, this.detailBuilder(), {
+      systemMaterial: UiMaterialKit.sheet(),
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       showClose: true
     })

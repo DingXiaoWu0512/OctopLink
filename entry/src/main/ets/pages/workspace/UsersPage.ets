@@ -822,6 +822,7 @@ export struct UsersPage {
               this.load();
             })
             .bindSheet($$this.sheetOpen, this.sheetSwitchBuilder, {
+              systemMaterial: UiMaterialKit.sheet(),
               detents: [SheetSize.LARGE],
               showClose: true,
               onDisappear: (): void => {
@@ -872,7 +873,6 @@ export struct UsersPage {
           .border({ width: 1, color: $r('app.color.card_stroke') })
           .margin({ left: 14, right: 14, bottom: 14 })
           .borderRadius(18)
-          .systemMaterial(UiMaterialKit.card())
         } else {
           Button({ type: ButtonType.Circle, stateEffect: true }) {
             SymbolGlyph($r('sys.symbol.plus'))
@@ -882,9 +882,9 @@ export struct UsersPage {
           }
           .width(58)
           .height(58)
-          .backgroundColor($r('app.color.bg_card'))
+          .backgroundColor($r('app.color.fab_glass'))
+          .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
           .border({ width: 1, color: $r('app.color.card_stroke') })
-          .systemMaterial(UiMaterialKit.button())
           .margin(22)
           .onClick((): void => {
             this.openCreate();
@@ -961,9 +961,10 @@ export struct UsersPage {
           .value(this.cuRole === '' ? '请选择角色' : this.cuRole)
           .fontColor($r('app.color.text_primary'))
           .font({ size: 14 })
-          .backgroundColor($r('app.color.bg_input'))
+          .backgroundColor(Color.Transparent)
           .borderRadius(12)
           .width('100%')
+          .systemMaterial(UiMaterialKit.button())
           .onSelect((index: number, value: string): void => {
             if (index >= 0 && index < this.roles.length) {
               this.cuRole = this.roles[index].id;

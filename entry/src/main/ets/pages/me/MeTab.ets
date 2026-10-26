@@ -1,3 +1,5 @@
+import { LengthMetrics } from '@kit.ArkUI';
+import { HdsNavigation, HdsNavigationTitleMode, ScrollEffectType, hdsMaterial } from '@kit.UIDesignKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { SessionStore } from '../../store/SessionStore';
 import { AppearanceStore } from '../../store/AppearanceStore';
@@ -19,10 +21,12 @@ export struct MeTab {
   @Consume('navStack') navStack: NavPathStack;
   @Prop topInset: number = 0;
   @Prop bottomPad: number = 72;
+  private scroller: Scroller = new Scroller();
   @State avatarPath: string = '';
   @State avatarFailed: boolean = false;
   @State hasPassword: boolean = false;
   @State ssoLinked: boolean = false;
+  @StorageLink('immersive.light.on') immersiveOn: boolean = true;
   @State permissions: Array<string> = [];
   private passwordController: CustomDialogController | null = null;
 
@@ -76,7 +80,8 @@ export struct MeTab {
   private showChangePassword(): void {
     this.passwordController = new CustomDialogController({
       builder: ChangePasswordDialog(),
-      autoCancel: true
+      autoCancel: true,
+      systemMaterial: UiMaterialKit.sheet()
     });
     this.passwordController.open();
   }
@@ -219,29 +224,14 @@ export struct MeTab {
     }
     .width('100%')
     .borderRadius(18)
-    .backgroundColor($r('app.color.bg_card'))
-    .systemMaterial(UiMaterialKit.card())
-  }
-
-  /** 沉浸光感标题栏：静止透底无边条，滚动时系统 GRADUAL_BLUR 渐变模糊 */
-  @Builder
-  titleBarBuilder() {
-    Column() {
-      Text($r('app.string.me_title'))
-        .fontSize(26)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-        .textAlign(TextAlign.Start)
-        .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 8 })
-    }
-    .width('100%')
-    .expandSafeArea([SafeAreaType.SYSTEM])
+    .backgroundColor($r('app.color.card_glass'))
+    .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
   }
 
   build() {
-    Navigation() {
-      Scroll() {
+    HdsNavigation() {
+      List({ scroller: this.scroller }) {
+        ListItem() {
         Column({ space: 14 }) {
           this.heroBuilder()
 
@@ -253,6 +243,20 @@ export struct MeTab {
               this.appearanceOption('跟随系统', AppearanceStore.MODE_AUTO)
             }
             .width('100%')
+
+            Row() {
+              Text('沉浸光感')
+                .fontSize(14)
+                .fontColor($r('app.color.text_primary'))
+              Blank()
+              Toggle({ type: ToggleType.Switch, isOn: this.immersiveOn })
+                .selectedColor($r('app.color.brand'))
+                .onChange((on: boolean): void => {
+                  UiMaterialKit.setImmersiveLight(on, getContext(this));
+                })
+            }
+            .width('100%')
+            .padding({ top: 8 })
           }
           .width('100%')
           .alignItems(HorizontalAlign.Start)
@@ -288,7 +292,8 @@ export struct MeTab {
             }
             .width('100%')
             .borderRadius(16)
-            .backgroundColor($r('app.color.bg_card'))
+            .backgroundColor($r('app.color.card_glass'))
+            .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
             .border({ width: 1, color: $r('app.color.card_stroke') })
             .shadow({ radius: 10, color: '#0A000000', offsetY: 3 })
           }
@@ -353,7 +358,8 @@ export struct MeTab {
             }
             .width('100%')
             .borderRadius(16)
-            .backgroundColor($r('app.color.bg_card'))
+            .backgroundColor($r('app.color.card_glass'))
+            .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
             .border({ width: 1, color: $r('app.color.card_stroke') })
             .shadow({ radius: 10, color: '#0A000000', offsetY: 3 })
           }
@@ -378,23 +384,60 @@ export struct MeTab {
         .width('100%')
         .padding({ left: 16, right: 16, bottom: this.bottomPad + 16 })
         .alignItems(HorizontalAlign.Start)
+        }
       }
       .width('100%')
-      .contentStartOffset(this.topInset + 54)
       .height('100%')
+      .contentStartOffset(this.topInset + 96)
       .scrollBar(BarState.Off)
     }
-    .title({
-      builder: this.titleBarBuilder,
-      height: this.topInset + 54
-    }, {
-      barStyle: BarStyle.STACK,
-      scrollEffectOptions: { scrollEffectType: ScrollEffectType.GRADUAL_BLUR }
+    .titleBar({
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: this.immersiveOn,
+          scrollEffectType: ScrollEffectType.GRADUAL_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.NONE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('app.color.text_primary'),
+              subTitleColor: $r('app.color.text_secondary')
+            },
+            menuStyle: {
+              iconColor: $r('app.color.icon_secondary'),
+              textColor: $r('app.color.text_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('app.color.text_primary'),
+              subTitleColor: $r('app.color.text_secondary')
+            },
+            menuStyle: {
+              iconColor: $r('app.color.icon_secondary'),
+              textColor: $r('app.color.text_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: { mainTitle: $r('app.string.me_title') }
+      }
     })
+    .titleMode(HdsNavigationTitleMode.FREE)
     .hideBackButton(true)
+    .bindToScrollable([this.scroller])
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
   }
 }

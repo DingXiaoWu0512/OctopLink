@@ -1,4 +1,5 @@
 import { CronService } from '../service/WorkspaceService';
+import { UiMaterialKit } from './UiMaterialKit';
 import { OctopApiError } from '../net/HttpClient';
 import { ModelPickerSheet } from './ModelPickerSheet';
 
@@ -297,7 +298,8 @@ export struct CronCreateDialog {
       })
       .bindSheet(this.pickerOpen, this.pickerBuilder(), {
         height: SheetSize.MEDIUM,
-        showClose: true
+        showClose: true,
+        systemMaterial: UiMaterialKit.sheet()
       })
 
       Row({ space: 12 }) {

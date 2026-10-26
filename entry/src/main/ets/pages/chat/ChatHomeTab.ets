@@ -16,12 +16,14 @@ import { ErrorRetry } from '../../components/ErrorRetry';
 import { CommandPalette } from '../../components/CommandPalette';
 import { ModelPickerSheet } from '../../components/ModelPickerSheet';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
+import { AgentAvatar } from '../../components/AgentAvatar';
 import { TimeFormat } from '../../utils/TimeFormat';
 import { Log } from '../../utils/Logger';
 import { ThreadDigestCache } from '../../utils/ThreadDigestCache';
 import { util } from '@kit.ArkTS';
 import { fileIo, picker } from '@kit.CoreFileKit';
-import { window } from '@kit.ArkUI';
+import { LengthMetrics, window } from '@kit.ArkUI';
+import { HdsNavigation, HdsNavigationTitleMode, ScrollEffectType, hdsMaterial } from '@kit.UIDesignKit';
 
 /** HITL 动作展示视图（Builder ForEach 用稳定对象） */
 class HitlActionView {
@@ -48,6 +50,7 @@ export struct ChatHomeTab {
   @StorageProp(SessionStore.KEY_AGENT_MODEL) agentModel: string = '';
   @State messages: Array<ChatMessageModel> = [];
   @State inputText: string = '';
+  @StorageLink('immersive.light.on') immersiveOn: boolean = true;
   @State streaming: boolean = false;
   @State streamPhase: string = '';
   @State connecting: boolean = false;
@@ -56,7 +59,6 @@ export struct ChatHomeTab {
   @State historyReady: boolean = true;
   @State welcome: WelcomeCardModel | null = null;
   @State recentThread: ThreadModel | null = null;
-  @State dotBreath: number = 1;
   @State paletteOpen: boolean = false;
   @State agentSheetOpen: boolean = false;
   @State agents: Array<AgentModel> = [];
@@ -99,7 +101,6 @@ export struct ChatHomeTab {
   private steerServerPendingId: string = '';
 
   aboutToAppear(): void {
-    this.startBreathing();
     this.loadSlashCommands();
     window.getLastWindow(getContext(this)).then((win: window.Window): void => {
       const wv: number = this.getUIContext().px2vp(win.getWindowProperties().windowRect.width);
@@ -271,6 +272,14 @@ export struct ChatHomeTab {
       this.refreshContextUsage();
       if (result.messages.length === 0) {
         this.loadWelcome();
+      } else {
+        // 打开时用一次带动画的滚动到底：产生真实滚动帧，让标题栏 GRADUAL_BLUR 初始态求值
+        // （纯程序化静默定位后效果不求值，首次手势才出现；动画下坠也是聊天应用的常见开屏表现）
+        setTimeout((): void => {
+          if (this.messages.length > 0) {
+            this.scroller.scrollToIndex(this.messages.length - 1, true);
+          }
+        }, 120);
       }
     } catch (e) {
       this.loadError = e instanceof OctopApiError ? e.message : '历史消息加载失败';
@@ -1411,18 +1420,6 @@ export struct ChatHomeTab {
     SessionStore.setCurrentAgent(agent);
   }
 
-  /** 状态点呼吸动画（无限往返） */
-  private startBreathing(): void {
-    this.getUIContext().animateTo({
-      duration: 1200,
-      curve: Curve.EaseInOut,
-      iterations: -1,
-      playMode: PlayMode.Alternate
-    }, (): void => {
-      this.dotBreath = 0.35;
-    });
-  }
-
   private contextBarColor(): Resource {
     const usage = this.contextUsage;
     if (usage === null) {
@@ -1454,16 +1451,6 @@ export struct ChatHomeTab {
       return `正在调用 ${name}`;
     }
     return '正在调用工具';
-  }
-
-  private statusColor(): Resource {
-    if (this.wsError !== '' || this.loadError !== '') {
-      return $r('app.color.danger');
-    }
-    if (this.connecting) {
-      return $r('app.color.warning');
-    }
-    return $r('app.color.success');
   }
 
   private statusText(): string {
@@ -1576,11 +1563,7 @@ export struct ChatHomeTab {
           ForEach(this.agents, (agent: AgentModel) => {
             ListItem() {
               Row({ space: 12 }) {
-                Image($r('app.media.octop_logo'))
-                  .width(40)
-                  .height(40)
-                  .borderRadius(20)
-                  .backgroundColor($r('app.color.brand_light'))
+                AgentAvatar({ agentId: agent.agentId, iconUrl: agent.iconUrl, avatarSize: 40 })
                 Column({ space: 2 }) {
                   Text(agent.name)
                     .fontSize(15)
@@ -1688,7 +1671,6 @@ export struct ChatHomeTab {
           .borderRadius(14)
           .height(36)
           .layoutWeight(1)
-          .systemMaterial(UiMaterialKit.button())
           .onClick((): void => {
             this.submitHitl('reject', '');
           })
@@ -1700,7 +1682,6 @@ export struct ChatHomeTab {
           .borderRadius(14)
           .height(36)
           .layoutWeight(1)
-          .systemMaterial(UiMaterialKit.button())
           .onClick((): void => {
             this.startHitlEdit();
           })
@@ -1712,7 +1693,6 @@ export struct ChatHomeTab {
           .borderRadius(14)
           .height(36)
           .layoutWeight(1)
-          .systemMaterial(UiMaterialKit.button())
           .onClick((): void => {
             this.submitHitl('approve', '');
           })
@@ -1739,7 +1719,6 @@ export struct ChatHomeTab {
           .borderRadius(14)
           .height(36)
           .width('100%')
-          .systemMaterial(UiMaterialKit.button())
           .onClick((): void => {
             this.submitHitlRespond();
           })
@@ -1897,139 +1876,50 @@ export struct ChatHomeTab {
     })
   }
 
-  /** 沉浸光感标题栏总高度：状态栏 + 头部横幅（含模型名时更高）+ 断线提示条 */
+  /** HdsNavigation 标题栏总高度：状态栏 + FREE 大标题区 + 断线提示条（stackBuilder） */
   chatTitleHeight(): number {
-    let content: number = 60;
-    if (this.agentModel !== '') {
-      content += 12;
-    }
+    let content: number = 96;
     if (this.wsError !== '') {
-      content += 36;
+      content += 38;
     }
     return this.topInset + content;
   }
 
-  /** 沉浸光感标题栏：静止透底无边条，滚动时系统 GRADUAL_BLUR 渐变模糊 */
+  /** HdsNavigation 标题副标题：连接状态 + 模型名 */
+  private chatSubTitle(): string {
+    let sub: string = this.statusText();
+    if (this.agentModel !== '') {
+      sub += ' · ' + this.agentModel;
+    }
+    return sub;
+  }
+
+  /** HdsNavigation 标题栏顶部自定义区：断线提示条 */
   @Builder
-  chatTitleBuilder() {
-    Column() {
-      if (this.wsError !== '') {
-        Row({ space: 6 }) {
-          SymbolGlyph($r('sys.symbol.wifi'))
-            .fontSize(13)
-            .fontColor([$r('app.color.warning')])
-          Text(this.wsError)
-            .fontSize(12)
-            .fontColor($r('app.color.warning'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-        .borderRadius(10)
-        .backgroundColor($r('app.color.warning_soft'))
-        .margin({ left: 16, right: 16, bottom: 4 })
-      }
-      Row({ space: 10 }) {
-        Button({ type: ButtonType.Normal, stateEffect: true }) {
-          Row({ space: 8 }) {
-            Image($r('app.media.octop_logo'))
-              .width(32)
-              .height(32)
-              .borderRadius(16)
-            Text(this.agentName === '' ? '选择专家' : this.agentName)
-              .fontSize(15)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .constraintSize({ maxWidth: 110 })
-            SymbolGlyph($r('sys.symbol.chevron_down'))
-              .fontSize(12)
-              .fontColor([$r('app.color.text_tertiary')])
-          }
-        }
-        .padding({ left: 6, right: 12, top: 5, bottom: 5 })
-        .borderRadius(21)
-        .backgroundColor($r('app.color.bg_card'))
-        .systemMaterial(UiMaterialKit.button())
-        .onClick((): void => {
-          this.openAgentSheet();
-        })
-        .bindSheet($$this.agentSheetOpen, this.agentSheetBuilder, {
-          detents: [SheetSize.MEDIUM],
-          systemMaterial: UiMaterialKit.sheet()
-        })
-
-        Column({ space: 3 }) {
-          Text(this.activeThreadId === '' ? '新对话' : '对话')
-            .fontSize(13)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_secondary'))
-          Row({ space: 5 }) {
-            Column()
-              .width(7)
-              .height(7)
-              .borderRadius(4)
-              .backgroundColor(this.statusColor())
-              .opacity(this.dotBreath)
-            Text(this.statusText())
-              .fontSize(11)
-              .fontColor($r('app.color.text_tertiary'))
-          }
-          if (this.agentModel !== '') {
-            Text(this.agentModel)
-              .fontSize(11)
-              .fontColor($r('app.color.text_tertiary'))
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .constraintSize({ maxWidth: 130 })
-          }
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-
-        Button({ type: ButtonType.Circle, stateEffect: true }) {
-          SymbolGlyph($r('sys.symbol.magnifyingglass'))
-            .fontSize(18)
-            .fontColor([$r('app.color.icon_secondary')])
-        }
-        .width(38)
-        .height(38)
-        .backgroundColor($r('app.color.bg_card'))
-        .systemMaterial(UiMaterialKit.button())
-        .onClick((): void => {
-          this.paletteOpen = true;
-        })
-        .bindSheet($$this.paletteOpen, this.paletteBuilder, {
-          detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-          systemMaterial: UiMaterialKit.sheet()
-        })
-
-        Button({ type: ButtonType.Circle, stateEffect: true }) {
-          SymbolGlyph($r('sys.symbol.timer'))
-            .fontSize(18)
-            .fontColor([$r('app.color.icon_secondary')])
-        }
-        .width(38)
-        .height(38)
-        .backgroundColor($r('app.color.bg_card'))
-        .systemMaterial(UiMaterialKit.button())
-        .onClick((): void => {
-          this.navStack.pushPath(new NavPathInfo('sessions', null));
-        })
+  wsErrorBuilder() {
+    if (this.wsError !== '') {
+      Row({ space: 6 }) {
+        SymbolGlyph($r('sys.symbol.wifi'))
+          .fontSize(13)
+          .fontColor([$r('app.color.warning')])
+        Text(this.wsError)
+          .fontSize(12)
+          .fontColor($r('app.color.warning'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 8 })
+      .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+      .borderRadius(10)
+      .backgroundColor($r('app.color.warning_soft'))
+      .margin({ left: 16, right: 16, bottom: 4 })
     }
-    .width('100%')
-    .expandSafeArea([SafeAreaType.SYSTEM])
   }
 
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
-      Navigation() {
+      HdsNavigation() {
         if (!this.historyReady && this.loadError === '') {
         Column() {
           LoadingProgress()
@@ -2104,34 +1994,107 @@ export struct ChatHomeTab {
           }
           .width('100%')
           .height('100%')
-          .padding({ left: 14, right: 14, bottom: this.bottomPad + 138 })
+          .padding({ left: 14, right: 14 })
           .contentStartOffset(this.chatTitleHeight())
+          // 内容末尾停在输入面板上边（bottomPad+10 底边距 + 面板高约 105），滚动时消息仍从毛玻璃面板后穿过
+          .contentEndOffset(this.bottomPad + 115)
           .scrollBar(BarState.Off)
           // 从底部开始布局：打开会话直接显示最新消息（无延迟滚动闪烁），键盘弹出压缩视口时消息仍锚定底部
           .stackFromEnd(this.messages.length > 0)
+          .bindSheet($$this.paletteOpen, this.paletteBuilder, {
+            detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+            systemMaterial: UiMaterialKit.sheet()
+          })
       }
       }
-      .title({
-        builder: this.chatTitleBuilder,
-        height: this.chatTitleHeight()
-      }, {
-        barStyle: BarStyle.STACK,
-        scrollEffectOptions: { scrollEffectType: ScrollEffectType.GRADUAL_BLUR }
+      .titleBar({
+        style: {
+          scrollEffectOpts: {
+            enableScrollEffect: this.immersiveOn,
+            scrollEffectType: ScrollEffectType.GRADUAL_BLUR,
+            blurEffectiveStartOffset: LengthMetrics.vp(0),
+            blurEffectiveEndOffset: LengthMetrics.vp(20)
+          },
+          systemMaterialEffect: {
+            materialType: hdsMaterial.MaterialType.NONE,
+            materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+          },
+          originalStyle: {
+            contentStyle: {
+              titleStyle: {
+                mainTitleColor: $r('app.color.text_primary'),
+                subTitleColor: $r('app.color.text_secondary')
+              },
+              menuStyle: {
+                iconColor: $r('app.color.icon_secondary'),
+                textColor: $r('app.color.text_primary')
+              }
+            }
+          },
+          scrollEffectStyle: {
+            contentStyle: {
+              titleStyle: {
+                mainTitleColor: $r('app.color.text_primary'),
+                subTitleColor: $r('app.color.text_secondary')
+              },
+              menuStyle: {
+                iconColor: $r('app.color.icon_secondary'),
+                textColor: $r('app.color.text_primary')
+              }
+            }
+          }
+        },
+        content: {
+          title: {
+            mainTitle: this.agentName === '' ? '选择专家' : this.agentName,
+            subTitle: this.chatSubTitle()
+          },
+          stackBuilder: (): void => this.wsErrorBuilder(),
+          menu: {
+            value: [{
+              content: {
+                label: '切换专家',
+                icon: $r('sys.symbol.person'),
+                isEnabled: true,
+                action: (): void => {
+                  this.openAgentSheet();
+                }
+              }
+            }, {
+              content: {
+                label: '搜索',
+                icon: $r('sys.symbol.magnifyingglass'),
+                isEnabled: true,
+                action: (): void => {
+                  this.paletteOpen = true;
+                }
+              }
+            }, {
+              content: {
+                label: '历史',
+                icon: $r('sys.symbol.timer'),
+                isEnabled: true,
+                action: (): void => {
+                  this.navStack.pushPath(new NavPathInfo('sessions', null));
+                }
+              }
+            }]
+          }
+        }
       })
+      .titleMode(HdsNavigationTitleMode.FREE)
       .hideBackButton(true)
+      .bindToScrollable([this.scroller])
+      .bindSheet($$this.agentSheetOpen, this.agentSheetBuilder, {
+        detents: [SheetSize.MEDIUM],
+        systemMaterial: UiMaterialKit.sheet()
+      })
       .width('100%')
       .height('100%')
 
-      // 底部沉浸层：渐变过渡 + 输入区
+      // 底部沉浸层：输入区（内容末尾已由 contentEndOffset 停在面板上边，无需渐变过渡）
       Column() {
         Column()
-          .height(30)
-          .width('100%')
-          .linearGradient({
-            angle: 180,
-            colors: [[$r('app.color.scrim_clear'), 0.0], [$r('app.color.scrim_soft'), 0.5], [$r('app.color.scrim_strong'), 1.0]]
-          })
-          .hitTestBehavior(HitTestMode.None)
 
       if (this.streaming && this.streamPhase !== '') {
         Row({ space: 7 }) {
@@ -2220,7 +2183,6 @@ export struct ChatHomeTab {
           .width(34)
           .height(34)
           .backgroundColor($r('app.color.bg_input'))
-          .systemMaterial(UiMaterialKit.button())
           .onClick((): void => {
             this.attachSheetOpen = true;
           })
@@ -2244,7 +2206,6 @@ export struct ChatHomeTab {
           .width(34)
           .height(34)
           .backgroundColor($r('app.color.bg_input'))
-          .systemMaterial(UiMaterialKit.button())
           .onClick((): void => {
             this.polishInput();
           })
@@ -2266,7 +2227,6 @@ export struct ChatHomeTab {
           .padding({ left: 10, right: 8 })
           .borderRadius(15)
           .backgroundColor($r('app.color.bg_input'))
-          .systemMaterial(UiMaterialKit.button())
           .onClick((): void => {
             this.modelSheetOpen = true;
           })
@@ -2300,7 +2260,6 @@ export struct ChatHomeTab {
             .width(34)
             .height(34)
             .backgroundColor($r('app.color.bg_input'))
-            .systemMaterial(UiMaterialKit.button())
             .onClick((): void => {
               this.cancelTurn();
             })
@@ -2338,7 +2297,8 @@ export struct ChatHomeTab {
       }
       .width('100%')
       .borderRadius(24)
-      .backgroundColor($r('app.color.bg_card'))
+      .backgroundColor($r('app.color.panel_glass'))
+      .backgroundBlurStyle(BlurStyle.COMPONENT_REGULAR)
       .border({ width: 1, color: $r('app.color.card_stroke') })
       .shadow({ radius: 12, color: '#1205243F', offsetX: 0, offsetY: 4 })
       .constraintSize({ maxWidth: this.inputMaxWidth })
@@ -2353,9 +2313,9 @@ export struct ChatHomeTab {
           }
           .width(36)
           .height(36)
-          .backgroundColor($r('app.color.bg_card'))
+          .backgroundColor($r('app.color.fab_glass'))
+          .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
           .border({ width: 1, color: $r('app.color.card_stroke') })
-          .systemMaterial(UiMaterialKit.button())
           .offset({ x: -2, y: -52 })
           .onClick((): void => {
             this.startNewConversation();

@@ -1,5 +1,4 @@
 import { window } from '@kit.ArkUI';
-import { UiMaterialKit } from './UiMaterialKit';
 
 /**
  * 二级页顶部标题栏：返回按钮 + 标题。
@@ -35,7 +34,6 @@ export struct PageHeader {
       .height(34)
       .backgroundColor($r('app.color.bg_card'))
       .border({ width: 1, color: $r('app.color.card_stroke') })
-      .systemMaterial(UiMaterialKit.button())
       .onClick((): void => {
         if (this.onBack !== null) {
           this.onBack();

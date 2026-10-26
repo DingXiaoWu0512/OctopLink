@@ -240,6 +240,7 @@ export struct TeamsPage {
         this.modelSheetOpen = true;
       })
       .bindSheet($$this.modelSheetOpen, this.modelSheetBuilder, {
+        systemMaterial: UiMaterialKit.sheet(),
         detents: [SheetSize.MEDIUM, SheetSize.LARGE],
         showClose: true
       })
@@ -444,6 +445,7 @@ export struct TeamsPage {
         .width('100%')
         .height('100%')
         .bindSheet($$this.sheetOpen, this.teamSheetBuilder, {
+          systemMaterial: UiMaterialKit.sheet(),
           detents: [SheetSize.MEDIUM, SheetSize.LARGE],
           showClose: true
         })
@@ -456,9 +458,9 @@ export struct TeamsPage {
         }
         .width(58)
         .height(58)
-        .backgroundColor($r('app.color.bg_card'))
+        .backgroundColor($r('app.color.fab_glass'))
+        .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
         .border({ width: 1, color: $r('app.color.card_stroke') })
-        .systemMaterial(UiMaterialKit.button())
         .margin(22)
         .onClick((): void => {
           this.openCreateSheet();

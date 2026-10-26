@@ -1,3 +1,5 @@
+import { LengthMetrics } from '@kit.ArkUI';
+import { HdsNavigation, HdsNavigationTitleMode, ScrollEffectType, hdsMaterial, TextStyleMode } from '@kit.UIDesignKit';
 import { AgentModel } from '../../model/AgentModels';
 import { AgentService } from '../../service/AgentService';
 import { OctopApiError } from '../../net/HttpClient';
@@ -6,6 +8,7 @@ import { EmptyView } from '../../components/EmptyView';
 import { ErrorRetry } from '../../components/ErrorRetry';
 import { AgentEditNavParam } from './AgentEditPage';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
+import { AgentAvatar } from '../../components/AgentAvatar';
 
 /** 专家筛选 chips 文案 */
 class ExpertFilterOption {
@@ -15,41 +18,6 @@ class ExpertFilterOption {
   constructor(label: string, value: number) {
     this.label = label;
     this.value = value;
-  }
-}
-
-/** 专家头像：icon_url 优先，回退头像接口，失败回退 logo */
-@Component
-struct AgentAvatar {
-  @Prop agentId: string = '';
-  @Prop iconUrl: string = '';
-  @State failed: boolean = false;
-
-  private src(): string {
-    if (this.iconUrl !== '') {
-      return AgentService.assetUrl(this.iconUrl);
-    }
-    return AgentService.avatarUrl(this.agentId);
-  }
-
-  build() {
-    if (this.failed) {
-      Image($r('app.media.octop_logo'))
-        .width(42)
-        .height(42)
-        .borderRadius(21)
-        .backgroundColor($r('app.color.brand_light'))
-    } else {
-      Image(this.src())
-        .width(42)
-        .height(42)
-        .borderRadius(21)
-        .backgroundColor($r('app.color.brand_light'))
-        .objectFit(ImageFit.Cover)
-        .onError((event: ImageError): void => {
-          this.failed = true;
-        })
-    }
   }
 }
 
@@ -68,8 +36,10 @@ export struct ExpertListPage {
   @State errorMsg: string = '';
   @State operating: boolean = false;
   @State filterIndex: number = 0;
+  @StorageLink('immersive.light.on') immersiveOn: boolean = true;
   @State searching: boolean = false;
   @State keyword: string = '';
+  private scroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
     this.load();
@@ -344,7 +314,6 @@ export struct ExpertListPage {
         .height(32)
         .borderRadius(16)
         .backgroundColor($r('app.color.brand_light'))
-        .systemMaterial(UiMaterialKit.button())
         .padding({ left: 14, right: 14 })
         .onClick((): void => {
           this.startChat(agent);
@@ -372,94 +341,38 @@ export struct ExpertListPage {
     )
   }
 
-  /** 沉浸光感标题栏：静止透底无边条，滚动时系统 GRADUAL_BLUR 渐变模糊 */
+  /** HdsNavigation 标题栏底部自定义区：搜索框 / 筛选 chips（列表从玻璃下方滚过） */
   @Builder
-  titleBarBuilder() {
-    Row() {
-      Text($r('app.string.tab_expert'))
-        .fontSize(26)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-
-      Blank()
-
-      Button({ type: ButtonType.Normal, stateEffect: true }) {
-        Text('团队')
-          .fontSize(13)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.icon_secondary'))
-      }
-      .height(38)
-      .borderRadius(19)
-      .backgroundColor($r('app.color.bg_card'))
-      .systemMaterial(UiMaterialKit.button())
-      .padding({ left: 16, right: 16 })
-      .onClick((): void => {
-        this.navStack.pushPath(new NavPathInfo('teams', null));
+  searchFilterBuilder() {
+    if (this.searching) {
+      TextInput({
+        text: this.keyword,
+        placeholder: '搜索专家名称或描述'
       })
-
-      Button({ type: ButtonType.Circle, stateEffect: true }) {
-        SymbolGlyph(this.searching ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
-          .fontSize(18)
-          .fontColor([$r('app.color.icon_secondary')])
-      }
-      .width(38)
-      .height(38)
-      .backgroundColor($r('app.color.bg_card'))
-      .systemMaterial(UiMaterialKit.button())
-      .onClick((): void => {
-        if (this.searching) {
-          this.keyword = '';
-        }
-        this.searching = !this.searching;
-      })
-
-      Button({ type: ButtonType.Circle, stateEffect: true }) {
-        SymbolGlyph($r('sys.symbol.plus'))
-          .fontSize(20)
-          .fontColor([$r('app.color.icon_secondary')])
-      }
-      .width(38)
-      .height(38)
-      .backgroundColor($r('app.color.bg_card'))
-      .systemMaterial(UiMaterialKit.button())
-      .margin({ left: 8 })
-      .onClick((): void => {
-        this.goCreate();
-      })
-    }
-    .width('100%')
-    .padding({ left: 16, right: 16, top: this.topInset + 10, bottom: 10 })
-    .expandSafeArea([SafeAreaType.SYSTEM])
-  }
-
-  build() {
-    Navigation() {
-      Column() {
-      if (this.searching) {
-        TextInput({
-          text: this.keyword,
-          placeholder: '搜索专家名称或描述'
+        .fontSize(14)
+        .height(38)
+        .borderRadius(19)
+        .backgroundColor(Color.Transparent)
+        .systemMaterial(UiMaterialKit.button())
+        .padding({ left: 14, right: 14 })
+        .margin({ left: 16, right: 16, bottom: 6 })
+        .onChange((value: string): void => {
+          this.keyword = value;
         })
-          .fontSize(14)
-          .height(38)
-          .borderRadius(19)
-          .backgroundColor($r('app.color.bg_input'))
-          .padding({ left: 14, right: 14 })
-          .margin({ left: 16, right: 16, bottom: 8 })
-          .onChange((value: string): void => {
-            this.keyword = value;
-          })
-      }
-
+    } else {
       Row({ space: 8 }) {
         ForEach(this.filterOptions(), (option: ExpertFilterOption) => {
           this.chipBuilder(option)
         }, (option: ExpertFilterOption) => `${option.value}_${this.filterIndex === option.value}`)
       }
       .width('100%')
-      .padding({ left: 16, right: 16, bottom: 10 })
+      .padding({ left: 16, right: 16, bottom: 8 })
+    }
+  }
 
+  build() {
+    HdsNavigation() {
+      Column() {
       if (this.loading && this.agents.length === 0) {
         Column() {
           LoadingProgress()
@@ -501,7 +414,7 @@ export struct ExpertListPage {
         .justifyContent(FlexAlign.Center)
       } else {
         Refresh({ refreshing: $$this.refreshing }) {
-          List({ space: 10 }) {
+          List({ space: 10, scroller: this.scroller }) {
             if (this.visibleAgents().length === 0) {
               ListItem() {
                 Column() {
@@ -523,7 +436,8 @@ export struct ExpertListPage {
           }
           .width('100%')
           .height('100%')
-          .padding({ left: 16, right: 16, bottom: this.bottomPad + 12 })
+          .padding({ left: 16, right: 16, bottom: 0 })
+          .contentStartOffset(this.topInset + 146)
           .scrollBar(BarState.Off)
         }
         .layoutWeight(1)
@@ -535,20 +449,92 @@ export struct ExpertListPage {
       }
       .width('100%')
       .height('100%')
-      .padding({ top: this.topInset + 66 })
 
     }
-    .title({
-      builder: this.titleBarBuilder,
-      height: this.topInset + 58
-    }, {
-      barStyle: BarStyle.STACK,
-      scrollEffectOptions: { scrollEffectType: ScrollEffectType.GRADUAL_BLUR }
+    .titleBar({
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: this.immersiveOn,
+          scrollEffectType: ScrollEffectType.GRADUAL_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.NONE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('app.color.text_primary'),
+              subTitleColor: $r('app.color.text_secondary')
+            },
+            menuStyle: {
+              iconColor: $r('app.color.icon_secondary'),
+              textColor: $r('app.color.text_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('app.color.text_primary'),
+              subTitleColor: $r('app.color.text_secondary')
+            },
+            menuStyle: {
+              iconColor: $r('app.color.icon_secondary'),
+              textColor: $r('app.color.text_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: { mainTitle: $r('app.string.tab_expert') },
+        menu: {
+          value: [{
+            content: {
+              label: '团队',
+              type: TextStyleMode.NORMAL,
+              isEnabled: true,
+              action: (): void => {
+                this.navStack.pushPath(new NavPathInfo('teams', null));
+              }
+            }
+          }, {
+            content: {
+              label: '搜索',
+              icon: this.searching ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'),
+              isEnabled: true,
+              action: (): void => {
+                if (this.searching) {
+                  this.keyword = '';
+                }
+                this.searching = !this.searching;
+              }
+            }
+          }, {
+            content: {
+              label: '新建',
+              icon: $r('sys.symbol.plus'),
+              isEnabled: true,
+              action: (): void => {
+                this.goCreate();
+              }
+            }
+          }]
+        },
+        bottomBuilder: {
+          builder: (): void => this.searchFilterBuilder(),
+          height: 50
+        }
+      }
     })
+    .titleMode(HdsNavigationTitleMode.FREE)
     .hideBackButton(true)
+    .bindToScrollable([this.scroller])
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
   }
 }

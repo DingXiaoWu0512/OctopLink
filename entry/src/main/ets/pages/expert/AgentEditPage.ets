@@ -420,7 +420,6 @@ export struct AgentEditPage {
                     .borderRadius(18)
                     .backgroundColor($r('app.color.brand_light'))
                     .fontColor($r('app.color.brand'))
-                    .systemMaterial(UiMaterialKit.button())
                     .enabled(!this.operating)
                     .onClick((): void => {
                       this.toggleRunning(true);
@@ -433,7 +432,6 @@ export struct AgentEditPage {
                     .borderRadius(18)
                     .backgroundColor($r('app.color.bg_input'))
                     .fontColor($r('app.color.text_secondary'))
-                    .systemMaterial(UiMaterialKit.button())
                     .enabled(!this.operating)
                     .onClick((): void => {
                       this.toggleRunning(false);
@@ -446,7 +444,6 @@ export struct AgentEditPage {
                     .borderRadius(18)
                     .backgroundColor($r('app.color.bg_input'))
                     .fontColor($r('app.color.text_secondary'))
-                    .systemMaterial(UiMaterialKit.button())
                     .enabled(!this.operating)
                     .onClick((): void => {
                       this.reloadAgent();
@@ -459,7 +456,6 @@ export struct AgentEditPage {
                     .borderRadius(18)
                     .backgroundColor($r('app.color.bg_input'))
                     .fontColor($r('app.color.text_secondary'))
-                    .systemMaterial(UiMaterialKit.button())
                     .enabled(!this.operating)
                     .onClick((): void => {
                       this.showStatus();
@@ -618,7 +614,6 @@ export struct AgentEditPage {
                 .borderRadius(23)
                 .backgroundColor($r('app.color.brand_light'))
                 .fontColor($r('app.color.brand'))
-                .systemMaterial(UiMaterialKit.button())
                 .enabled(!this.saving)
                 .onClick((): void => {
                   this.save();
@@ -650,6 +645,7 @@ export struct AgentEditPage {
           .width('100%')
           .scrollBar(BarState.Off)
           .bindSheet($$this.modelSheetOpen, this.modelSheetBuilder, {
+            systemMaterial: UiMaterialKit.sheet(),
             detents: [SheetSize.MEDIUM, SheetSize.LARGE],
             showClose: true
           })

@@ -1,4 +1,4 @@
-﻿import {
+import {
   BuiltinExpertModel,
   ExpertDetailModel,
   HubExpertModel,
@@ -13,6 +13,8 @@ import { EmptyView } from '../../components/EmptyView';
 import { ErrorRetry } from '../../components/ErrorRetry';
 import { ModelPickerSheet } from '../../components/ModelPickerSheet';
 import { PageHeader } from '../../components/PageHeader';
+import { AgentAvatar } from '../../components/AgentAvatar';
+import { UiMaterialKit } from '../../components/UiMaterialKit';
 
 /** 分段定义 */
 class CreateSegment {
@@ -522,11 +524,7 @@ export struct ExpertCreatePage {
             ForEach(this.builtinExperts, (expert: BuiltinExpertModel) => {
               ListItem() {
                 Row({ space: 12 }) {
-                  Image($r('app.media.octop_logo'))
-                    .width(44)
-                    .height(44)
-                    .borderRadius(22)
-                    .backgroundColor($r('app.color.brand_light'))
+                  AgentAvatar({ iconUrl: expert.iconUrl, avatarSize: 44 })
                   Column({ space: 4 }) {
                     Text(expert.label)
                       .fontSize(16)
@@ -573,11 +571,7 @@ export struct ExpertCreatePage {
             ForEach(this.hubItems, (item: HubExpertModel) => {
               ListItem() {
                 Row({ space: 12 }) {
-                  Image($r('app.media.octop_logo'))
-                    .width(44)
-                    .height(44)
-                    .borderRadius(22)
-                    .backgroundColor($r('app.color.brand_light'))
+                  AgentAvatar({ iconUrl: item.iconUrl, avatarSize: 44 })
                   Column({ space: 4 }) {
                     Row({ space: 6 }) {
                       Text(item.label)
@@ -639,11 +633,7 @@ export struct ExpertCreatePage {
             ForEach(this.publishedList, (item: PublishedExpertModel) => {
               ListItem() {
                 Row({ space: 12 }) {
-                  Image($r('app.media.octop_logo'))
-                    .width(44)
-                    .height(44)
-                    .borderRadius(22)
-                    .backgroundColor($r('app.color.brand_light'))
+                  AgentAvatar({ iconUrl: item.iconUrl, avatarSize: 44 })
                   Column({ space: 4 }) {
                     Text(item.label)
                       .fontSize(16)
@@ -741,9 +731,10 @@ export struct ExpertCreatePage {
                   .fontColor($r('app.color.text_primary'))
                   .selectedOptionFont({ size: 14 })
                   .optionFont({ size: 14 })
-                  .backgroundColor($r('app.color.bg_input'))
+                  .backgroundColor(Color.Transparent)
                   .borderRadius(12)
                   .width('100%')
+                  .systemMaterial(UiMaterialKit.button())
                   .onSelect((index: number, text: string): void => {
                     this.customMbti = text;
                   })
@@ -775,6 +766,7 @@ export struct ExpertCreatePage {
                   this.modelSheetOpen = true;
                 })
                 .bindSheet($$this.modelSheetOpen, this.modelSheetBuilder, {
+                  systemMaterial: UiMaterialKit.sheet(),
                   detents: [SheetSize.MEDIUM, SheetSize.LARGE],
                   showClose: true
                 })
@@ -853,6 +845,7 @@ export struct ExpertCreatePage {
       .width('100%')
       .height('100%')
       .bindSheet($$this.detailOpen, this.detailSheetBuilder, {
+        systemMaterial: UiMaterialKit.sheet(),
         detents: [SheetSize.MEDIUM, SheetSize.LARGE],
         showClose: true
       })

@@ -52,7 +52,8 @@ export struct CronPage {
           this.load();
         }
       }),
-      autoCancel: true
+      autoCancel: true,
+      systemMaterial: UiMaterialKit.sheet()
     });
     this.createController.open();
   }
@@ -71,7 +72,8 @@ export struct CronPage {
           this.load();
         }
       }),
-      autoCancel: true
+      autoCancel: true,
+      systemMaterial: UiMaterialKit.sheet()
     });
     this.createController.open();
   }
@@ -346,9 +348,9 @@ export struct CronPage {
         }
         .width(58)
         .height(58)
-        .backgroundColor($r('app.color.bg_card'))
+        .backgroundColor($r('app.color.fab_glass'))
+        .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
         .border({ width: 1, color: $r('app.color.card_stroke') })
-        .systemMaterial(UiMaterialKit.button())
         .margin(22)
         .onClick((): void => {
           this.showCreate();
