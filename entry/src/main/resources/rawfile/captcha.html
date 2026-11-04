@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #F5F7FA;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+      padding: 12px;
+    }
+    #host { margin-top: 8px; }
+    #msg {
+      color: #5B6B7F;
+      font-size: 14px;
+      padding: 12px;
+      text-align: center;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div id="host"></div>
+  <div id="msg">正在加载验证码…</div>
+  <script>
+    (function () {
+      var cfg;
+      try {
+        cfg = JSON.parse(window.octopCaptcha.getConfig());
+      } catch (e) {
+        cfg = null;
+      }
+      if (!cfg) {
+        fail('验证码配置读取失败');
+        return;
+      }
+      var provider = cfg.provider || '';
+      var siteKey = cfg.site_key || '';
+      if (!provider || !siteKey) {
+        fail('验证码配置不完整');
+        return;
+      }
+
+      function send(token) {
+        document.getElementById('msg').textContent = '验证成功';
+        window.octopCaptcha.onToken(token);
+      }
+
+      function fail(text) {
+        document.getElementById('msg').textContent = text || '验证码加载失败，请检查网络';
+        window.octopCaptcha.onError();
+      }
+
+      function loadScript(src, onloadName) {
+        return new Promise(function (resolve, reject) {
+          var s = document.createElement('script');
+          s.src = src;
+          s.async = true;
+          if (onloadName) {
+            window[onloadName] = function () { resolve(); };
+          }
+          s.onload = function () { if (!onloadName) { resolve(); } };
+          s.onerror = function () { reject(new Error('script load failed')); };
+          document.head.appendChild(s);
+        });
+      }
+
+      var host = document.getElementById('host');
+      var renderOpts = function () {
+        return {
+          sitekey: siteKey,
+          callback: function (token) { send(token); },
+          'expired-callback': function () { fail('验证已过期，请重试'); },
+          'error-callback': function () { fail('验证出错，请重试'); }
+        };
+      };
+
+      if (provider === 'turnstile') {
+        loadScript('https://challenges.cloudflare.com/turnstile/v0/api.js')
+          .then(function () {
+            if (window.turnstile) {
+              window.turnstile.render(host, renderOpts());
+            } else {
+              fail();
+            }
+          }).catch(function () { fail(); });
+      } else if (provider === 'hcaptcha') {
+        loadScript('https://js.hcaptcha.com/1/api.js?render=explicit&onload=__octopHcaptchaOnload&hl=zh-CN',
+          '__octopHcaptchaOnload')
+          .then(function () {
+            if (window.hcaptcha) {
+              window.hcaptcha.render(host, renderOpts());
+            } else {
+              fail();
+            }
+          }).catch(function () { fail(); });
+      } else if (provider === 'recaptcha') {
+        loadScript('https://www.google.com/recaptcha/api.js?render=explicit&onload=__octopRecaptchaOnload&hl=zh-CN',
+          '__octopRecaptchaOnload')
+          .then(function () {
+            if (window.grecaptcha) {
+              window.grecaptcha.render(host, renderOpts());
+            } else {
+              fail();
+            }
+          }).catch(function () { fail(); });
+      } else if (provider === 'recaptcha-v3') {
+        loadScript('https://www.google.com/recaptcha/api.js?render=' + encodeURIComponent(siteKey))
+          .then(function () {
+            var g = window.grecaptcha;
+            if (!g) { fail(); return; }
+            g.ready(function () {
+              g.execute(siteKey, { action: 'login' }).then(function (token) {
+                send(token);
+              }).catch(function () { fail('验证失败，请重试'); });
+            });
+          }).catch(function () { fail(); });
+      } else if (provider === 'tencent') {
+        loadScript('https://turing.captcha.qcloud.com/TJCaptcha.js')
+          .then(function () {
+            var Ctor = window.TencentCaptcha;
+            if (!Ctor) { fail(); return; }
+            try {
+              var captcha = new Ctor(siteKey, function (res) {
+                if (res && res.ret === 0 && res.ticket) {
+                  send(res.ticket + ':' + (res.randstr || ''));
+                } else {
+                  fail('验证未完成，请重试');
+                }
+              });
+              captcha.show();
+            } catch (e) {
+              fail();
+            }
+          }).catch(function () { fail(); });
+      } else if (provider === 'geetest-v4') {
+        loadScript('https://static.geetest.com/v4/gt4.js')
+          .then(function () {
+            var init = window.initGeetest4;
+            if (!init) { fail(); return; }
+            try {
+              init({
+                captchaId: siteKey,
+                product: 'bind',
+                protocol: 'https://',
+                language: 'zho'
+              }, function (captcha) {
+                captcha.onSuccess(function () {
+                  var v = captcha.getValidate();
+                  if (v && v.captcha_output) {
+                    send(JSON.stringify({
+                      lot_number: v.lot_number,
+                      captcha_output: v.captcha_output,
+                      pass_token: v.pass_token,
+                      gen_time: v.gen_time
+                    }));
+                  } else {
+                    fail('验证失败，请重试');
+                  }
+                });
+                captcha.onError(function () { fail('验证出错，请重试'); });
+                captcha.onClose(function () { fail('验证窗口已关闭，请重试'); });
+                captcha.onReady(function () { captcha.showCaptcha(); });
+              });
+            } catch (e) {
+              fail();
+            }
+          }).catch(function () { fail(); });
+      } else {
+        fail('暂不支持的验证码类型：' + provider);
+      }
+    })();
+  </script>
+</body>
+</html>

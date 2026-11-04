@@ -136,7 +136,9 @@ export class HttpClient {
     const client = http.createHttp();
     try {
       const header: Record<string, string> = {
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        // multipart 必需：netstack 仅在该头存在时才发送 multiFormDataList（boundary 由网络栈自动补全）
+        'Content-Type': 'multipart/form-data'
       };
       if (this.token !== '') {
         header['Authorization'] = `Bearer ${this.token}`;
@@ -227,6 +229,53 @@ export class HttpClient {
       }
       const err = e as BusinessError;
       Log.error(`HTTP GET(binary) ${path} failed: ${err.code} ${err.message}`);
+      throw new OctopApiError('无法连接服务器，请检查网络与地址', 0, 'NETWORK_ERROR');
+    } finally {
+      client.destroy();
+    }
+  }
+
+  /** 二进制响应（POST JSON，返回原始字节；错误响应仍走统一包络解析） */
+  async postForBytes(path: string, bodyStr: string): Promise<ArrayBuffer> {
+    if (this.baseUrl === '') {
+      throw new OctopApiError('服务器地址未配置', 0, 'NO_SERVER');
+    }
+    const client = http.createHttp();
+    try {
+      const header: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*'
+      };
+      if (this.token !== '') {
+        header['Authorization'] = `Bearer ${this.token}`;
+      }
+      const options: http.HttpRequestOptions = {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: bodyStr,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER,
+        connectTimeout: 10000,
+        readTimeout: 120000,
+        usingCache: false
+      };
+      const resp: http.HttpResponse = await client.request(`${this.baseUrl}${path}`, options);
+      this.maybeRenewToken(resp.header);
+      const status: number = resp.responseCode;
+      if (status >= 200 && status < 300) {
+        if (resp.result instanceof ArrayBuffer) {
+          return resp.result;
+        }
+        return new ArrayBuffer(0);
+      }
+      const raw: Object = resp.result;
+      const body: string = typeof raw === 'string' ? raw : '';
+      throw HttpClient.buildApiError(status, body, path, this.token);
+    } catch (e) {
+      if (e instanceof OctopApiError) {
+        throw e;
+      }
+      const err = e as BusinessError;
+      Log.error(`HTTP POST(binary) ${path} failed: ${err.code} ${err.message}`);
       throw new OctopApiError('无法连接服务器，请检查网络与地址', 0, 'NETWORK_ERROR');
     } finally {
       client.destroy();

@@ -116,4 +116,46 @@ export class ProviderService {
   static async adminTest(providerId: number, bodyStr: string): Promise<string> {
     return await HttpClient.getInstance().post(`/api/admin/providers/${providerId}/test`, bodyStr);
   }
+
+  // ---------- ChatGPT Codex OAuth 设备码登录（providers 权限） ----------
+
+  /** 发起设备码登录 → {state_id, user_code, verification_url} */
+  static async codexOauthStart(): Promise<CodexOauthStartResult> {
+    const text: string = await HttpClient.getInstance().post(
+      '/api/admin/providers/codex-oauth/start', '{}');
+    const rec = JsonHelper.parse(text);
+    return CodexOauthStartResult.parse(rec === null ? {} : rec);
+  }
+
+  /** 轮询设备码登录结果（status: pending|ok|error，原始响应） */
+  static async codexOauthPending(stateId: string): Promise<string> {
+    return await HttpClient.getInstance().get(
+      `/api/admin/providers/codex-oauth/pending/${stateId}`);
+  }
+
+  /** 清除 Codex OAuth 登录（同时清空 openai-codex provider 的 api_key） */
+  static async codexOauthLogout(): Promise<void> {
+    await HttpClient.getInstance().delete('/api/admin/providers/codex-oauth');
+  }
+}
+
+/** Codex 设备码登录发起结果 */
+export class CodexOauthStartResult {
+  readonly stateId: string;
+  readonly userCode: string;
+  readonly verificationUrl: string;
+
+  constructor(stateId: string, userCode: string, verificationUrl: string) {
+    this.stateId = stateId;
+    this.userCode = userCode;
+    this.verificationUrl = verificationUrl;
+  }
+
+  static parse(rec: Record<string, Object>): CodexOauthStartResult {
+    return new CodexOauthStartResult(
+      JsonHelper.getString(rec, 'state_id', ''),
+      JsonHelper.getString(rec, 'user_code', ''),
+      JsonHelper.getString(rec, 'verification_url', '')
+    );
+  }
 }

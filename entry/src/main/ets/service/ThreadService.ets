@@ -72,4 +72,31 @@ export class ThreadService {
       await HttpClient.getInstance().get(`/api/agents/${agentId}/threads/${threadId}/context-usage`);
     return ContextUsageModel.parse(text);
   }
+
+  // ---- 导出 / 会话重绑 / 历史迁移 ----
+
+  /** 导出未渲染原始会话历史（GET history/export，返回原始 JSON 文本） */
+  static async exportHistory(agentId: string, threadId: string): Promise<string> {
+    return await HttpClient.getInstance().get(
+      `/api/agents/${agentId}/threads/${threadId}/history/export`);
+  }
+
+  /** 重绑仪表盘会话（PATCH /api/agents/{id}/session；把活跃 session 指到指定 thread） */
+  static async rebindSession(agentId: string, threadId: string): Promise<void> {
+    const body: Record<string, Object> = { 'thread_id': threadId };
+    await HttpClient.getInstance().patch(
+      `/api/agents/${agentId}/session`, JSON.stringify(body));
+  }
+
+  /** 旧版历史迁移状态（GET /history-migration/status） */
+  static async migrationStatus(agentId: string): Promise<string> {
+    return await HttpClient.getInstance().get(
+      `/api/agents/${agentId}/history-migration/status`);
+  }
+
+  /** 启动旧版历史迁移（POST /history-migration/start） */
+  static async migrationStart(agentId: string): Promise<string> {
+    return await HttpClient.getInstance().post(
+      `/api/agents/${agentId}/history-migration/start`, '{}');
+  }
 }

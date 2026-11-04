@@ -8,6 +8,7 @@ import { ErrorRetry } from '../../components/ErrorRetry';
 import { ModelPickerSheet } from '../../components/ModelPickerSheet';
 import { PageHeader } from '../../components/PageHeader';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
+import { MenuSheetContent, MenuSheetOption } from '../../components/MenuSheet';
 
 /** 我的团队：列表 / 创建 / 编辑 / 删除（成员至少 2 位专家） */
 @Component
@@ -26,6 +27,11 @@ export struct TeamsPage {
   @State selectedIds: Array<string> = [];
   @State candidatesLoading: boolean = false;
   @State modelSheetOpen: boolean = false;
+  @State menuOpen: boolean = false;
+  @State menuTitle: string = '';
+  @State menuMessage: string = '';
+  @State menuOptions: Array<MenuSheetOption> = [];
+  private menuActions: Array<() => void> = [];
   private pathStack: NavPathStack | null = null;
   private editingTeam: TeamModel | null = null;
 
@@ -137,24 +143,31 @@ export struct TeamsPage {
   }
 
   private showTeamMenu(team: TeamModel): void {
-    this.getUIContext().showActionSheet({
-      title: team.name,
-      message: '选择要执行的操作',
-      sheets: [
-        {
-          title: '编辑团队',
-          action: (): void => {
-            this.openEditSheet(team);
-          }
-        },
-        {
-          title: '删除团队',
-          action: (): void => {
-            this.confirmDelete(team);
-          }
-        }
-      ]
-    });
+    this.menuTitle = team.name;
+    this.menuMessage = '选择要执行的操作';
+    this.menuOptions = [
+      new MenuSheetOption($r('sys.symbol.square_and_pencil'), '编辑团队', '修改名称、描述与成员', false),
+      new MenuSheetOption($r('sys.symbol.trash'), '删除团队', '', true)
+    ];
+    this.menuActions = [
+      (): void => {
+        this.openEditSheet(team);
+      },
+      (): void => {
+        this.confirmDelete(team);
+      }
+    ];
+    this.menuOpen = true;
+  }
+
+  /** 菜单选中：先关半模态再执行预置动作（越界保护） */
+  private onMenuSelect(index: number): void {
+    this.menuOpen = false;
+    if (index < 0 || index >= this.menuActions.length) {
+      return;
+    }
+    const action: () => void = this.menuActions[index];
+    action();
   }
 
   private confirmDelete(team: TeamModel): void {
@@ -473,6 +486,23 @@ export struct TeamsPage {
     .backgroundColor($r('app.color.bg_page'))
     .onReady((ctx: NavDestinationContext): void => {
       this.onNavReady(ctx);
+    })
+    .bindSheet($$this.menuOpen, this.menuSheetBuilder, {
+      detents: [SheetSize.FIT_CONTENT],
+      showClose: true,
+      systemMaterial: UiMaterialKit.sheet()
+    })
+  }
+
+  @Builder
+  menuSheetBuilder() {
+    MenuSheetContent({
+      title: this.menuTitle,
+      message: this.menuMessage,
+      options: this.menuOptions,
+      onSelect: (index: number): void => {
+        this.onMenuSelect(index);
+      }
     })
   }
 }

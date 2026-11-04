@@ -87,3 +87,63 @@ export struct StreamingOrbit {
     .height(this.orbitSize)
   }
 }
+
+/**
+ * 等待回复气泡内的"Octop 在忙"动效：
+ * 打字章鱼（type.webp）做 Working 心情同款快呼吸 + 上下浮动，右侧三点渐次呼吸示意输出中。
+ * 替代原五点绕轨指示器（视觉太机械）；LTPO 30Hz 期望帧率低功耗。
+ */
+@Component
+export struct BusyOctop {
+  @State private breathe: number = 1;
+  @State private bob: number = 0;
+  @State private dotPhase: number = 0;
+  private timerId: number = -1;
+  private readonly dotIdx: number[] = [0, 1, 2];
+
+  aboutToAppear(): void {
+    this.getUIContext().animateTo({
+      duration: 700,
+      curve: Curve.EaseInOut,
+      iterations: -1,
+      playMode: PlayMode.Alternate,
+      expectedFrameRateRange: { expected: 30, min: 0, max: 120 }
+    }, (): void => {
+      this.breathe = 1.07;
+      this.bob = -1.5;
+    });
+    this.timerId = setInterval((): void => {
+      this.dotPhase = (this.dotPhase + 1) % 3;
+    }, 350);
+  }
+
+  aboutToDisappear(): void {
+    if (this.timerId >= 0) {
+      clearInterval(this.timerId);
+      this.timerId = -1;
+    }
+  }
+
+  build() {
+    Row({ space: 7 }) {
+      Image($rawfile('pet/type.webp'))
+        .width(46)
+        .height(26)
+        .objectFit(ImageFit.Contain)
+        .interpolation(ImageInterpolation.None)
+        .scale({ x: this.breathe, y: this.breathe })
+        .translate({ y: this.bob })
+
+      ForEach(this.dotIdx, (i: number) => {
+        Circle()
+          .width(4.6)
+          .height(4.6)
+          .fill($r('app.color.brand'))
+          .fillOpacity(this.dotPhase === i ? 0.95 : 0.3)
+          .scale({ x: this.dotPhase === i ? 1.25 : 1, y: this.dotPhase === i ? 1.25 : 1 })
+          .margin({ top: 8 })
+      }, (i: number) => `${i}`)
+    }
+    .alignItems(VerticalAlign.Center)
+  }
+}

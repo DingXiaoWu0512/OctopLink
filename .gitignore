@@ -11,4 +11,15 @@
 **/.test
 /.appanalyzer
 /.cache
-.screens/
+/.cache.screens
+/.cache.screenshots_test.png
+/.codegenie
+/.design-ref
+/.icon-src
+/.recon
+/.screens
+/.uiverify
+/cube_shots
+/.preview
+.DS_Store
+Thumbs.db

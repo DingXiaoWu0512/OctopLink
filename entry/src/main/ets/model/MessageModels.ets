@@ -108,14 +108,41 @@ export class ChatAttachmentModel {
     );
   }
 
-  /** user_turn 帧 attachments 数组项 */
-  toFrameItem(): Record<string, Object> {
-    const item: Record<string, Object> = {
-      'workspace_path': this.workspacePath,
-      'filename': this.filename,
-      'media_type': this.mediaType
+  isImageMedia(): boolean {
+    return this.mediaType.startsWith('image/');
+  }
+
+  /**
+   * 用户消息 content 块（与官方 dashboard buildUserMessageContent 对齐）：
+   * 图片 → image 视觉块（后端转 image_url base64），其余 → file 工作区路径提示块。
+   * 服务器 UserTurnWsFrame 不识别顶层 attachments 字段，附件必须嵌入 messages content。
+   */
+  toContentBlock(): Record<string, Object> {
+    if (this.isImageMedia() && this.accessUrl !== '') {
+      const source: Record<string, Object> = { 'type': 'url', 'url': this.accessUrl };
+      if (this.mediaType !== '') {
+        source['media_type'] = this.mediaType;
+      }
+      const block: Record<string, Object> = {
+        'type': 'image',
+        'source': source,
+        'preview_url': this.accessUrl,
+        'workspace_path': this.workspacePath
+      };
+      if (this.filename !== '') {
+        block['filename'] = this.filename;
+      }
+      return block;
+    }
+    const block: Record<string, Object> = {
+      'type': 'file',
+      'filename': this.filename !== '' ? this.filename : 'attachment',
+      'workspace_path': this.workspacePath
     };
-    return item;
+    if (this.mediaType !== '') {
+      block['media_type'] = this.mediaType;
+    }
+    return block;
   }
 }
 
@@ -151,6 +178,8 @@ export class ChatMessageModel {
   speakerName: string;
   isSteerQueued: boolean;
   clientPendingId: string;
+  /** US3 思考态精修：推理首帧时间戳（onReasoningDelta 首帧记录，供折叠行可选计时"深度思考中… Ns"展示） */
+  reasoningStartAt?: number;
 
   constructor(role: ChatRole, text: string) {
     this.id = nextLocalId();

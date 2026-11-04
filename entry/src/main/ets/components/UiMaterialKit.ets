@@ -85,6 +85,25 @@ export class UiMaterialKit {
     });
   }
 
+  /** 标题胶囊/大号悬浮胶囊：超薄玻璃 + 系统投影浮起 + 交互形变 + 强光感（材质开启时配 transparent 底色使用） */
+  static pill(): uiMaterial.Material {
+    if (!UiMaterialKit.isSupported() || !UiMaterialKit.immersiveOn()) {
+      return uiMaterial.Material.empty;
+    }
+    return new uiMaterial.ImmersiveMaterial({
+      style: uiMaterial.ImmersiveStyle.ULTRA_THIN,
+      colorInvert: true,
+      applyShadow: true,
+      interactive: true,
+      lightEffect: { color: '#66FFFFFF' }
+    });
+  }
+
+  /** 材质底色降级：材质可用时返回 Transparent（材质接管底色，透出光感），否则返回原底色 */
+  static glassBg(fallback: ResourceColor): ResourceColor {
+    return UiMaterialKit.isSupported() && UiMaterialKit.immersiveOn() ? Color.Transparent : fallback;
+  }
+
   /** 页面标题栏：常驻超薄玻璃（Scroll 页 GRADUAL_BLUR 不生效的兜底，内容从玻璃下滚过） */
   static titleBar(): uiMaterial.Material {
     if (!UiMaterialKit.isSupported() || !UiMaterialKit.immersiveOn()) {

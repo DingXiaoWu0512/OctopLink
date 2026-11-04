@@ -1,6 +1,8 @@
 import { AppPrefs, UserProfilePref } from './AppPrefs';
 import { TokenVault } from './TokenVault';
 import { HttpClient } from '../net/HttpClient';
+import { NotifyService } from '../service/NotifyService';
+import { I18nService } from '../service/I18nService';
 import { LoginResultModel } from '../model/AuthModels';
 import { AgentModel } from '../model/AgentModels';
 
@@ -12,6 +14,7 @@ import { AgentModel } from '../model/AgentModels';
  */
 export class SessionStore {
   static readonly KEY_LOGGED_IN = 'session.loggedIn';
+  static readonly KEY_TRIAL_MODE = 'session.trialMode';
   static readonly KEY_BASE_URL = 'session.baseUrl';
   static readonly KEY_USERNAME = 'session.username';
   static readonly KEY_DISPLAY_NAME = 'session.displayName';
@@ -23,6 +26,7 @@ export class SessionStore {
   static readonly KEY_ACTIVE_THREAD_ID = 'session.activeThreadId';
   static readonly KEY_MAIN_TAB = 'session.mainTab';
   static readonly KEY_THREADS_DIRTY = 'chat.threadsDirty';
+  static readonly KEY_CHAT_UNREAD = 'chat.unreadCount';
   static readonly KEY_AGENTS_DIRTY = 'expert.agentsDirty';
 
   /** 应用冷启动恢复：读取偏好与安全存储，重建运行时会话 */
@@ -45,6 +49,14 @@ export class SessionStore {
     AppStorage.setOrCreate(SessionStore.KEY_DISPLAY_NAME, profile.displayName);
     AppStorage.setOrCreate(SessionStore.KEY_ROLE, profile.role);
     AppStorage.setOrCreate(SessionStore.KEY_LOGGED_IN, true);
+    // 专家记忆：恢复上次使用的专家 agentId（仅恢复 id，无网络依赖，不阻塞启动）；
+    // 名称/欢迎语由 ChatHomeTab 首次挂载时 AgentService.get 回填（见 backfillCurrentAgent）
+    const lastAgentId: string = await AppPrefs.getInstance().getLastAgentId();
+    if (lastAgentId !== '') {
+      AppStorage.setOrCreate(SessionStore.KEY_AGENT_ID, lastAgentId);
+    }
+    NotifyService.start();
+    I18nService.warmup();
   }
 
   /** 登录成功后写入会话与持久化存储 */
@@ -62,13 +74,35 @@ export class SessionStore {
     AppStorage.setOrCreate(SessionStore.KEY_AGENT_WELCOME, '');
     AppStorage.setOrCreate(SessionStore.KEY_AGENT_MODEL, '');
     AppStorage.setOrCreate(SessionStore.KEY_LOGGED_IN, true);
+    NotifyService.start();
+    I18nService.warmup();
     AppPrefs.getInstance().setServerUrl(baseUrl);
     AppPrefs.getInstance().saveProfile(new UserProfilePref(
       result.user.username, result.user.displayName, result.user.role));
   }
 
+  /** 试用模式：跳过登录直接进入主界面（无服务器会话；所有数据请求抛 NO_SERVER，页面显示空态/错误态；冷启动不恢复） */
+  static enterTrial(): void {
+    HttpClient.getInstance().setBaseUrl('');
+    HttpClient.getInstance().setToken('');
+    AppStorage.setOrCreate(SessionStore.KEY_BASE_URL, '');
+    AppStorage.setOrCreate(SessionStore.KEY_USERNAME, '');
+    AppStorage.setOrCreate(SessionStore.KEY_DISPLAY_NAME, '试用用户');
+    AppStorage.setOrCreate(SessionStore.KEY_ROLE, '');
+    AppStorage.setOrCreate(SessionStore.KEY_AGENT_ID, '');
+    AppStorage.setOrCreate(SessionStore.KEY_AGENT_NAME, '');
+    AppStorage.setOrCreate(SessionStore.KEY_AGENT_WELCOME, '');
+    AppStorage.setOrCreate(SessionStore.KEY_AGENT_MODEL, '');
+    AppStorage.setOrCreate(SessionStore.KEY_ACTIVE_THREAD_ID, '');
+    AppStorage.setOrCreate(SessionStore.KEY_MAIN_TAB, 0);
+    AppStorage.setOrCreate(SessionStore.KEY_CHAT_UNREAD, 0);
+    AppStorage.setOrCreate(SessionStore.KEY_TRIAL_MODE, true);
+    AppStorage.setOrCreate(SessionStore.KEY_LOGGED_IN, true);
+  }
+
   /** 401/Token 失效：清除会话回到登录页 */
   static handleUnauthorized(): void {
+    NotifyService.stop();
     TokenVault.clearToken();
     HttpClient.getInstance().setToken('');
     AppStorage.setOrCreate(SessionStore.KEY_AGENT_ID, '');
@@ -77,6 +111,8 @@ export class SessionStore {
     AppStorage.setOrCreate(SessionStore.KEY_AGENT_MODEL, '');
     AppStorage.setOrCreate(SessionStore.KEY_ACTIVE_THREAD_ID, '');
     AppStorage.setOrCreate(SessionStore.KEY_MAIN_TAB, 0);
+    AppStorage.setOrCreate(SessionStore.KEY_CHAT_UNREAD, 0);
+    AppStorage.setOrCreate(SessionStore.KEY_TRIAL_MODE, false);
     AppStorage.setOrCreate(SessionStore.KEY_LOGGED_IN, false);
   }
 
@@ -95,6 +131,8 @@ export class SessionStore {
     AppStorage.setOrCreate(SessionStore.KEY_AGENT_WELCOME, agent.welcomeMessage);
     AppStorage.setOrCreate(SessionStore.KEY_AGENT_MODEL, agent.defaultModel);
     AppStorage.setOrCreate(SessionStore.KEY_THREADS_DIRTY, true);
+    // 专家记忆：切换专家唯一写入口，持久化 agentId（冷启动 restore 恢复；'' 表清除）
+    AppPrefs.getInstance().setLastAgentId(agent.agentId);
   }
 
   /** 专家列表发生变化（创建/编辑/删除/启停）后通知专家页刷新 */

@@ -7,6 +7,7 @@ import { ErrorRetry } from '../../components/ErrorRetry';
 import { PageHeader } from '../../components/PageHeader';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
 import { JsonHelper } from '../../utils/JsonHelper';
+import { MenuSheetContent, MenuSheetOption } from '../../components/MenuSheet';
 
 /** 内置渠道类型（与扫码向导平台一致） */
 class BuiltinChannelKind {
@@ -19,15 +20,17 @@ class BuiltinChannelKind {
   }
 }
 
-/** 渠道平台徽标：单字符 + 平台主题色（本地渲染，不依赖网络图标） */
+/** 渠道平台徽标：单字符 + 平台品牌渐变色对（主色→提亮色，本地渲染，不依赖网络图标） */
 class ChannelPlatformBadge {
   readonly label: string;
-  readonly color: string;
+  readonly mainColor: string;
+  readonly lightColor: string;
   readonly name: string;
 
-  constructor(label: string, color: string, name: string) {
+  constructor(label: string, mainColor: string, lightColor: string, name: string) {
     this.label = label;
-    this.color = color;
+    this.mainColor = mainColor;
+    this.lightColor = lightColor;
     this.name = name;
   }
 }
@@ -51,6 +54,14 @@ export struct ChannelPage {
   @State qrImage: string = '';
   @State qrStatus: string = '';
   @State qrPolling: boolean = false;
+  /** 二维码展示状态机：loading（生成中/图加载中）| loaded（图已加载）| failed（生成或加载失败）| waitcode（仅 token 无 url，验证码等待态） */
+  @State qrLoadState: string = 'loading';
+  @State qrUserCode: string = '';
+  @State menuOpen: boolean = false;
+  @State menuTitle: string = '';
+  @State menuMessage: string = '';
+  @State menuOptions: Array<MenuSheetOption> = [];
+  private menuActions: Array<() => void> = [];
   private agentId: string = '';
   private pollToken: string = '';
   private pollCount: number = 0;
@@ -132,36 +143,40 @@ export struct ChannelPage {
 
   /** 长按渠道菜单 */
   private showChannelMenu(channel: ChannelModel): void {
-    this.getUIContext().showActionSheet({
-      title: channel.name,
-      message: '选择要执行的操作',
-      sheets: [
-        {
-          title: '查看配置',
-          action: (): void => {
-            this.showChannelDetail(channel);
-          }
-        },
-        {
-          title: '测试连通性',
-          action: (): void => {
-            this.testChannel(channel);
-          }
-        },
-        {
-          title: channel.enabled ? '停用渠道' : '启用渠道',
-          action: (): void => {
-            this.toggle(channel, !channel.enabled);
-          }
-        },
-        {
-          title: '删除渠道',
-          action: (): void => {
-            this.confirmDelete(channel);
-          }
-        }
-      ]
-    });
+    this.menuTitle = channel.name;
+    this.menuMessage = '选择要执行的操作';
+    this.menuOptions = [
+      new MenuSheetOption($r('sys.symbol.doc_text'), '查看配置', channel.kind, false),
+      new MenuSheetOption($r('sys.symbol.bolt'), '测试连通性', '', false),
+      new MenuSheetOption(channel.enabled ? $r('sys.symbol.xmark_circle') : $r('sys.symbol.checkmark_circle'),
+        channel.enabled ? '停用渠道' : '启用渠道', '', false),
+      new MenuSheetOption($r('sys.symbol.trash'), '删除渠道', '', true)
+    ];
+    this.menuActions = [
+      (): void => {
+        this.showChannelDetail(channel);
+      },
+      (): void => {
+        this.testChannel(channel);
+      },
+      (): void => {
+        this.toggle(channel, !channel.enabled);
+      },
+      (): void => {
+        this.confirmDelete(channel);
+      }
+    ];
+    this.menuOpen = true;
+  }
+
+  /** 菜单选中：先关半模态再执行预置动作（越界保护） */
+  private onMenuSelect(index: number): void {
+    this.menuOpen = false;
+    if (index < 0 || index >= this.menuActions.length) {
+      return;
+    }
+    const action: () => void = this.menuActions[index];
+    action();
   }
 
   /** 详情：展示 config JSON */
@@ -209,28 +224,63 @@ export struct ChannelPage {
 
   // ---- 创建渠道 ----
 
-  /** 渠道行平台徽标：已知平台返回品牌色，未知 kind 回退灰底首字符 */
+  /** 渠道行平台徽标：已知平台返回品牌渐变色对，未知 kind 回退灰渐变首字符 */
   private platformBadge(kind: string): ChannelPlatformBadge {
     if (kind === 'dingtalk') {
-      return new ChannelPlatformBadge('钉', '#1677FF', '钉钉');
+      return new ChannelPlatformBadge('钉', '#1677FF', '#69B4FF', '钉钉');
     }
     if (kind === 'wecom') {
-      return new ChannelPlatformBadge('企', '#00B96B', '企业微信');
+      return new ChannelPlatformBadge('企', '#00B96B', '#67E0A8', '企业微信');
     }
     if (kind === 'qq') {
-      return new ChannelPlatformBadge('Q', '#12B7F5', 'QQ');
+      return new ChannelPlatformBadge('Q', '#12B7F5', '#7ADCFF', 'QQ');
     }
     if (kind === 'weixin') {
-      return new ChannelPlatformBadge('微', '#07C160', '微信');
+      return new ChannelPlatformBadge('微', '#07C160', '#6BDD9B', '微信');
     }
     if (kind === 'feishu') {
-      return new ChannelPlatformBadge('飞', '#3370FF', '飞书');
+      return new ChannelPlatformBadge('飞', '#3370FF', '#8AA8FF', '飞书');
     }
     if (kind === 'yuanbao') {
-      return new ChannelPlatformBadge('元', '#FF7D00', '元宝');
+      return new ChannelPlatformBadge('元', '#FF7D00', '#FFB366', '元宝');
     }
     const first: string = kind.length > 0 ? kind.charAt(0).toUpperCase() : '?';
-    return new ChannelPlatformBadge(first, '#7F7F7F', kind);
+    return new ChannelPlatformBadge(first, '#7F7F7F', '#B2B2B2', kind);
+  }
+
+  /** 渠道品牌 Logo 资源映射（dashboard 同源本地资源）：已知 kind → 品牌图片；未知 kind 返回 null（回退文字徽章） */
+  private channelLogo(kind: string): Resource | null {
+    if (kind === 'feishu') {
+      return $r('app.media.feishu');
+    }
+    if (kind === 'dingtalk') {
+      return $r('app.media.dingtalk');
+    }
+    if (kind === 'wecom') {
+      return $r('app.media.wecom');
+    }
+    if (kind === 'weixin') {
+      return $r('app.media.weixin');
+    }
+    if (kind === 'qq') {
+      return $r('app.media.qq');
+    }
+    if (kind === 'yuanbao') {
+      return $r('app.media.yuanbao');
+    }
+    if (kind === 'telegram') {
+      return $r('app.media.telegram');
+    }
+    if (kind === 'discord') {
+      return $r('app.media.discord');
+    }
+    if (kind === 'mqtt') {
+      return $r('app.media.mqtt');
+    }
+    if (kind === 'xiaoyi') {
+      return $r('app.media.xiaoyi');
+    }
+    return null;
   }
 
   private openCreateSheet(): void {
@@ -304,7 +354,9 @@ export struct ChannelPage {
   private async startQr(index: number): Promise<void> {
     this.qrPlatformIndex = index;
     this.qrImage = '';
+    this.qrUserCode = '';
     this.qrStatus = '正在生成二维码…';
+    this.qrLoadState = 'loading';
     this.qrPolling = false;
     this.sheetMode = 'qr';
     this.sheetOpen = true;
@@ -313,16 +365,27 @@ export struct ChannelPage {
     try {
       const session: QrSessionModel = await this.generateSession(platform);
       if (session.qrcodeUrl === '' && session.token === '') {
+        this.qrLoadState = 'failed';
         this.qrStatus = '二维码生成失败';
         return;
       }
-      this.qrImage = session.qrcodeUrl;
-      this.qrStatus = session.userCode === '' ? '请使用平台 App 扫码' : `请扫码，验证码：${session.userCode}`;
+      this.qrUserCode = session.userCode;
+      if (session.qrcodeUrl === '') {
+        // 仅返回 token 无 qrcode_url：验证码等待态，不无限转圈
+        this.qrLoadState = 'waitcode';
+        this.qrStatus = session.userCode === '' ? '正在等待平台返回二维码…' : '请在平台 App 中输入验证码完成接入';
+      } else {
+        this.qrImage = session.qrcodeUrl;
+        // 本地 QRCode 组件渲染，有内容即出码，无网络加载态
+        this.qrLoadState = 'loaded';
+        this.qrStatus = session.userCode === '' ? '请使用平台 App 扫码' : `请扫码，验证码：${session.userCode}`;
+      }
       this.pollToken = session.token;
       this.pollCount = 0;
       this.qrPolling = true;
       this.schedulePoll(platform, session.token);
     } catch (e) {
+      this.qrLoadState = 'failed';
       this.qrStatus = e instanceof OctopApiError ? e.message : '二维码生成失败';
     }
   }
@@ -476,26 +539,26 @@ export struct ChannelPage {
     }
   }
 
-  /** 接入方式选择：双卡布局 */
+  /** 接入方式选择：双卡布局（整卡可点） */
   @Builder
   private accessModeBuilder() {
     Column({ space: 16 }) {
       Text('接入渠道')
         .fontSize(17)
-        .fontWeight(FontWeight.Bold)
+        .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
 
       Row({ space: 12 }) {
-        Column({ space: 8 }) {
+        Column({ space: 10 }) {
           Column() {
             SymbolGlyph($r('sys.symbol.square_and_pencil'))
               .fontSize(24)
               .fontColor([$r('app.color.brand')])
           }
-          .width(46)
-          .height(46)
-          .borderRadius(23)
+          .width(48)
+          .height(48)
+          .borderRadius(24)
           .backgroundColor($r('app.color.brand_light'))
           .justifyContent(FlexAlign.Center)
 
@@ -506,30 +569,32 @@ export struct ChannelPage {
             .maxLines(1)
 
           Text('选择类型，填写配置创建')
-            .fontSize(11)
+            .fontSize(12)
             .fontColor($r('app.color.text_tertiary'))
             .maxLines(2)
             .textAlign(TextAlign.Center)
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Center)
-        .padding({ left: 14, right: 14, top: 18, bottom: 18 })
-        .borderRadius(16)
+        .constraintSize({ minHeight: 150 })
+        .padding({ left: 12, right: 12, top: 20, bottom: 20 })
+        .borderRadius(18)
         .backgroundColor($r('app.color.bg_card'))
         .border({ width: 1, color: $r('app.color.card_stroke') })
+        .shadow({ radius: 10, color: '#0A000000', offsetY: 3 })
         .onClick((): void => {
           this.openCreateSheet();
         })
 
-        Column({ space: 8 }) {
+        Column({ space: 10 }) {
           Column() {
             SymbolGlyph($r('sys.symbol.dot_radiowaves_left_and_right'))
               .fontSize(24)
               .fontColor([$r('app.color.brand')])
           }
-          .width(46)
-          .height(46)
-          .borderRadius(23)
+          .width(48)
+          .height(48)
+          .borderRadius(24)
           .backgroundColor($r('app.color.brand_light'))
           .justifyContent(FlexAlign.Center)
 
@@ -540,21 +605,24 @@ export struct ChannelPage {
             .maxLines(1)
 
           Text('钉钉/企微/微信等平台扫码')
-            .fontSize(11)
+            .fontSize(12)
             .fontColor($r('app.color.text_tertiary'))
             .maxLines(2)
             .textAlign(TextAlign.Center)
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Center)
-        .padding({ left: 14, right: 14, top: 18, bottom: 18 })
-        .borderRadius(16)
+        .constraintSize({ minHeight: 150 })
+        .padding({ left: 12, right: 12, top: 20, bottom: 20 })
+        .borderRadius(18)
         .backgroundColor($r('app.color.bg_card'))
         .border({ width: 1, color: $r('app.color.card_stroke') })
+        .shadow({ radius: 10, color: '#0A000000', offsetY: 3 })
         .onClick((): void => {
           this.qrPlatformIndex = -1;
           this.qrImage = '';
           this.qrStatus = '';
+          this.qrLoadState = 'loading';
           this.sheetMode = 'qr';
         })
       }
@@ -585,6 +653,7 @@ export struct ChannelPage {
         .borderRadius(12)
         .width('100%')
         .systemMaterial(UiMaterialKit.button())
+        .menuSystemMaterial(UiMaterialKit.sheet())
         .onSelect((index: number, text: string): void => {
           this.kindIndex = index;
         })
@@ -664,13 +733,67 @@ export struct ChannelPage {
           .fontSize(15)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text_secondary'))
-        if (this.qrImage !== '') {
-          Image(this.qrImage)
+        if (this.qrLoadState === 'failed') {
+          // 失败态：generate 抛错或二维码加载失败，给明确文案 + 重新生成入口
+          Column({ space: 10 }) {
+            Column() {
+              SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+                .fontSize(26)
+                .fontColor([$r('app.color.warning')])
+            }
+            .width(56)
+            .height(56)
+            .borderRadius(28)
+            .backgroundColor($r('app.color.warning_soft'))
+            .justifyContent(FlexAlign.Center)
+            Text(this.qrStatus === '' ? '二维码加载失败' : this.qrStatus)
+              .fontSize(13)
+              .fontColor($r('app.color.text_secondary'))
+              .textAlign(TextAlign.Center)
+              .width('100%')
+            Button('重新生成')
+              .fontSize(14)
+              .fontWeight(FontWeight.Medium)
+              .height(38)
+              .padding({ left: 26, right: 26 })
+              .borderRadius(19)
+              .backgroundColor($r('app.color.brand'))
+              .fontColor($r('app.color.text_on_brand'))
+              .onClick((): void => {
+                this.startQr(this.qrPlatformIndex);
+              })
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Center)
+          .padding({ top: 12, bottom: 4 })
+        } else if (this.qrLoadState === 'waitcode') {
+          // 仅 token 无 qrcode_url：验证码等待态，不无限转圈
+          Column({ space: 8 }) {
+            Text('验证码')
+              .fontSize(13)
+              .fontColor($r('app.color.text_secondary'))
+            Text(this.qrUserCode === '' ? '—' : this.qrUserCode)
+              .fontSize(30)
+              .fontWeight(FontWeight.Bold)
+              .fontColor($r('app.color.brand'))
+              .letterSpacing(2)
+            Text(this.qrStatus)
+              .fontSize(12)
+              .fontColor($r('app.color.text_tertiary'))
+              .textAlign(TextAlign.Center)
+              .width('100%')
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Center)
+          .padding({ top: 16, bottom: 4 })
+        } else if (this.qrImage !== '') {
+          // ArkUI 内置 QRCode 本地编码渲染：深色码点 + 浅色底固定搭配保证任何外观下可扫
+          QRCode(this.qrImage)
+            .color(Color.Black)
+            .backgroundColor(Color.White)
             .width(210)
             .height(210)
-            .objectFit(ImageFit.Contain)
             .borderRadius(12)
-            .backgroundColor(Color.White)
             .padding(6)
         } else {
           LoadingProgress()
@@ -678,11 +801,15 @@ export struct ChannelPage {
             .height(40)
             .color($r('app.color.brand'))
         }
-        Text(this.qrStatus)
-          .fontSize(13)
-          .fontColor($r('app.color.text_secondary'))
-          .textAlign(TextAlign.Center)
-          .width('100%')
+
+        if (this.qrLoadState !== 'failed' && this.qrLoadState !== 'waitcode') {
+          Text(this.qrStatus)
+            .fontSize(13)
+            .fontColor($r('app.color.text_secondary'))
+            .textAlign(TextAlign.Center)
+            .width('100%')
+        }
+
         Button('重新选择平台')
           .fontSize(14)
           .height(38)
@@ -745,16 +872,33 @@ export struct ChannelPage {
               ForEach(this.channels, (channel: ChannelModel) => {
                 ListItem() {
                   Row({ space: 12 }) {
-                    Text(this.platformBadge(channel.kind).label)
-                      .fontSize(18)
-                      .fontWeight(FontWeight.Bold)
-                      .fontColor(Color.White)
-                      .width(44)
-                      .height(44)
-                      .textAlign(TextAlign.Center)
-                      .backgroundColor(this.platformBadge(channel.kind).color)
-                      .borderRadius(14)
-                      .opacity(channel.enabled ? 1 : 0.5)
+                    Stack() {
+                      if (this.channelLogo(channel.kind) !== null) {
+                        // 已知品牌：渲染品牌 Logo 图片（圆角裁剪；渐变底兜透明 SVG 背景）
+                        Image(this.channelLogo(channel.kind))
+                          .width(44)
+                          .height(44)
+                          .borderRadius(14)
+                          .clip(true)
+                      } else {
+                        Text(this.platformBadge(channel.kind).label)
+                          .fontSize(18)
+                          .fontWeight(FontWeight.Bold)
+                          .fontColor(Color.White)
+                      }
+                    }
+                    .width(44)
+                    .height(44)
+                    .borderRadius(14)
+                    .linearGradient({
+                      direction: GradientDirection.RightBottom,
+                      colors: [
+                        [this.platformBadge(channel.kind).mainColor, 0],
+                        [this.platformBadge(channel.kind).lightColor, 1]
+                      ]
+                    })
+                    .border({ width: 1, color: '#33FFFFFF' })
+                    .opacity(channel.enabled ? 1 : 0.5)
                     Column({ space: 5 }) {
                       Row({ space: 6 }) {
                         Text(channel.name)
@@ -826,6 +970,8 @@ export struct ChannelPage {
             this.qrPlatformIndex = -1;
             this.qrImage = '';
             this.qrStatus = '';
+            this.qrLoadState = 'loading';
+            this.qrUserCode = '';
           }
         })
 
@@ -856,6 +1002,23 @@ export struct ChannelPage {
     .backgroundColor($r('app.color.bg_page'))
     .onReady((ctx: NavDestinationContext): void => {
       this.onNavReady(ctx);
+    })
+    .bindSheet($$this.menuOpen, this.menuSheetBuilder, {
+      detents: [SheetSize.FIT_CONTENT],
+      showClose: true,
+      systemMaterial: UiMaterialKit.sheet()
+    })
+  }
+
+  @Builder
+  menuSheetBuilder() {
+    MenuSheetContent({
+      title: this.menuTitle,
+      message: this.menuMessage,
+      options: this.menuOptions,
+      onSelect: (index: number): void => {
+        this.onMenuSelect(index);
+      }
     })
   }
 }

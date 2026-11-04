@@ -220,16 +220,42 @@ export class KnowledgeDocModel {
   }
 }
 
-/** 知识库服务能力（GET /api/knowledge-bases/capability）：功能开关与限制 */
+/** 知识库服务能力（GET /api/knowledge-bases/capability）：功能开关、嵌入后端、OCR 与限制 */
 export class KnowledgeCapability {
   readonly enabled: boolean;
+  readonly selectedModel: string;
+  readonly backend: string; // onnx | remote
+  readonly providerId: string;
+  readonly prerequisitesOk: boolean;
+  readonly usable: boolean;
+  readonly chunkSize: number;
+  readonly chunkOverlap: number;
+  readonly retrievalK: number;
+  readonly contextCharBudget: number;
+  readonly ocrEnabled: boolean;
+  readonly ocrBackend: string;
+  readonly ocrModel: string;
   readonly maxBasesPerOwner: number;
   readonly maxDocsPerKb: number;
   readonly maxDocumentBytes: number;
 
-  constructor(enabled: boolean, maxBasesPerOwner: number, maxDocsPerKb: number,
-    maxDocumentBytes: number) {
+  constructor(enabled: boolean, selectedModel: string, backend: string, providerId: string,
+    prerequisitesOk: boolean, usable: boolean, chunkSize: number, chunkOverlap: number,
+    retrievalK: number, contextCharBudget: number, ocrEnabled: boolean, ocrBackend: string,
+    ocrModel: string, maxBasesPerOwner: number, maxDocsPerKb: number, maxDocumentBytes: number) {
     this.enabled = enabled;
+    this.selectedModel = selectedModel;
+    this.backend = backend;
+    this.providerId = providerId;
+    this.prerequisitesOk = prerequisitesOk;
+    this.usable = usable;
+    this.chunkSize = chunkSize;
+    this.chunkOverlap = chunkOverlap;
+    this.retrievalK = retrievalK;
+    this.contextCharBudget = contextCharBudget;
+    this.ocrEnabled = ocrEnabled;
+    this.ocrBackend = ocrBackend;
+    this.ocrModel = ocrModel;
     this.maxBasesPerOwner = maxBasesPerOwner;
     this.maxDocsPerKb = maxDocsPerKb;
     this.maxDocumentBytes = maxDocumentBytes;
@@ -238,11 +264,25 @@ export class KnowledgeCapability {
   static parse(text: string): KnowledgeCapability {
     const rec = JsonHelper.parse(text);
     if (rec === null) {
-      return new KnowledgeCapability(false, 0, 0, 0);
+      return new KnowledgeCapability(false, '', '', '', false, false, 800, 120, 8, 6000,
+        false, '', '', 0, 0, 0);
     }
+    const ocr: Record<string, Object> | null = JsonHelper.getRecord(rec, 'ocr');
     const limits: Record<string, Object> | null = JsonHelper.getRecord(rec, 'limits');
     return new KnowledgeCapability(
-      JsonHelper.getBool(rec, 'enabled', true),
+      JsonHelper.getBool(rec, 'feature_enabled', true),
+      JsonHelper.getString(rec, 'selected_model', ''),
+      JsonHelper.getString(rec, 'backend', ''),
+      JsonHelper.getString(rec, 'provider_id', ''),
+      JsonHelper.getBool(rec, 'prerequisites_ok', false),
+      JsonHelper.getBool(rec, 'usable', false),
+      JsonHelper.getNumber(rec, 'chunk_size', 800),
+      JsonHelper.getNumber(rec, 'chunk_overlap', 120),
+      JsonHelper.getNumber(rec, 'retrieval_k', 8),
+      JsonHelper.getNumber(rec, 'context_char_budget', 6000),
+      ocr === null ? false : JsonHelper.getBool(ocr, 'enabled', false),
+      ocr === null ? '' : JsonHelper.getString(ocr, 'backend', ''),
+      ocr === null ? '' : JsonHelper.getString(ocr, 'model', ''),
       limits === null ? 0 : JsonHelper.getNumber(limits, 'max_bases_per_owner', 0),
       limits === null ? 0 : JsonHelper.getNumber(limits, 'max_docs_per_kb', 0),
       limits === null ? 0 : JsonHelper.getNumber(limits, 'max_document_bytes', 0)
@@ -347,9 +387,14 @@ export class QrSessionModel {
     if (token === '') {
       token = JsonHelper.getString(rec, 'qrcode_token', '');
     }
+    // 二维码内容取值链：qrcode_url 优先，企微 generate 无 qrcode_url 时兜底 auth_url
+    let qrUrl: string = JsonHelper.getString(rec, 'qrcode_url', '');
+    if (qrUrl === '') {
+      qrUrl = JsonHelper.getString(rec, 'auth_url', '');
+    }
     return new QrSessionModel(
       token,
-      JsonHelper.getString(rec, 'qrcode_url', ''),
+      qrUrl,
       JsonHelper.getString(rec, 'user_code', '')
     );
   }
@@ -1033,25 +1078,47 @@ export class ResolvedModelEntry {
   readonly model: string;
   readonly name: string;
   readonly reasoning: boolean;
+  /** 思考强度档位（reasoning_config.efforts，enum 或 token_budget 档位值） */
+  readonly reasoningEfforts: Array<string>;
+  /** 默认档位 */
+  readonly reasoningDefaultEffort: string;
 
   constructor(providerId: number, providerName: string, providerKind: string,
-    model: string, name: string, reasoning: boolean) {
+    model: string, name: string, reasoning: boolean,
+    reasoningEfforts: Array<string>, reasoningDefaultEffort: string) {
     this.providerId = providerId;
     this.providerName = providerName;
     this.providerKind = providerKind;
     this.model = model;
     this.name = name;
     this.reasoning = reasoning;
+    this.reasoningEfforts = reasoningEfforts;
+    this.reasoningDefaultEffort = reasoningDefaultEffort;
   }
 
   static fromRecord(rec: Record<string, Object>): ResolvedModelEntry {
+    const config: Record<string, Object> | null = JsonHelper.getRecord(rec, 'reasoning_config');
+    const efforts: Array<string> = [];
+    let defaultEffort: string = '';
+    if (config !== null) {
+      const rawEfforts = JsonHelper.getStringArray(config, 'efforts');
+      for (const item of rawEfforts) {
+        const v: string = item.trim();
+        if (v !== '') {
+          efforts.push(v);
+        }
+      }
+      defaultEffort = JsonHelper.getString(config, 'default_effort', '');
+    }
     return new ResolvedModelEntry(
       JsonHelper.getNumber(rec, 'provider_id', 0),
       JsonHelper.getString(rec, 'provider_name', ''),
       JsonHelper.getString(rec, 'provider_kind', ''),
       JsonHelper.getString(rec, 'model', ''),
       JsonHelper.getString(rec, 'name', ''),
-      JsonHelper.getBool(rec, 'reasoning', false)
+      JsonHelper.getBool(rec, 'reasoning', false),
+      efforts,
+      defaultEffort
     );
   }
 
@@ -1092,11 +1159,11 @@ export class ProviderModel {
   readonly enabled: boolean;
   readonly note: string;
   readonly streamUsage: boolean;
-  readonly modelCount: number;
+  readonly models: Array<string>;
   readonly hasApiKey: boolean;
 
   constructor(id: number, name: string, kind: string, baseUrl: string, enabled: boolean,
-    note: string, streamUsage: boolean, modelCount: number, hasApiKey: boolean) {
+    note: string, streamUsage: boolean, models: Array<string>, hasApiKey: boolean) {
     this.id = id;
     this.name = name;
     this.kind = kind;
@@ -1104,12 +1171,34 @@ export class ProviderModel {
     this.enabled = enabled;
     this.note = note;
     this.streamUsage = streamUsage;
-    this.modelCount = modelCount;
+    this.models = models;
     this.hasApiKey = hasApiKey;
+  }
+
+  get modelCount(): number {
+    return this.models.length;
   }
 
   static fromRecord(rec: Record<string, Object>): ProviderModel {
     const apiKey: Object | undefined = rec['api_key'];
+    // models 容错：字符串数组或 {id: ...} 对象数组两种形态都接受
+    const models: Array<string> = [];
+    const recModels = JsonHelper.getRecordArray(rec, 'models');
+    for (const item of recModels) {
+      const id: string = JsonHelper.getString(item, 'id', '');
+      if (id !== '') {
+        models.push(id);
+      }
+    }
+    if (models.length === 0) {
+      const rawModels = JsonHelper.getStringArray(rec, 'models');
+      for (const item of rawModels) {
+        const id: string = item.trim();
+        if (id !== '') {
+          models.push(id);
+        }
+      }
+    }
     return new ProviderModel(
       JsonHelper.getNumber(rec, 'id', 0),
       JsonHelper.getString(rec, 'name', ''),
@@ -1118,7 +1207,7 @@ export class ProviderModel {
       JsonHelper.getBool(rec, 'enabled', false),
       JsonHelper.getString(rec, 'note', ''),
       JsonHelper.getBool(rec, 'stream_usage', false),
-      JsonHelper.getRecordArray(rec, 'models').length,
+      models,
       typeof apiKey === 'string' && apiKey !== ''
     );
   }
@@ -1136,6 +1225,72 @@ export class ProviderModel {
     const items = JsonHelper.getRecordArray(obj, 'providers');
     for (const rec of items) {
       result.push(ProviderModel.fromRecord(rec));
+    }
+    return result;
+  }
+}
+
+/** Provider 内置预设（GET /api/providers/presets，新建 provider 表单预填模板） */
+export class ProviderPresetModel {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: string;
+  readonly baseUrl: string;
+  readonly description: string;
+  readonly models: Array<string>;
+
+  constructor(id: string, name: string, kind: string, baseUrl: string,
+    description: string, models: Array<string>) {
+    this.id = id;
+    this.name = name;
+    this.kind = kind;
+    this.baseUrl = baseUrl;
+    this.description = description;
+    this.models = models;
+  }
+
+  static fromRecord(rec: Record<string, Object>): ProviderPresetModel {
+    // models 容错：字符串数组或 {id: ...} 对象数组两种形态都接受
+    const models: Array<string> = [];
+    const recModels = JsonHelper.getRecordArray(rec, 'models');
+    for (const item of recModels) {
+      const modelId: string = JsonHelper.getString(item, 'id', '');
+      if (modelId !== '') {
+        models.push(modelId);
+      }
+    }
+    if (models.length === 0) {
+      const rawModels = JsonHelper.getStringArray(rec, 'models');
+      for (const item of rawModels) {
+        const modelId: string = item.trim();
+        if (modelId !== '') {
+          models.push(modelId);
+        }
+      }
+    }
+    return new ProviderPresetModel(
+      JsonHelper.getString(rec, 'id', ''),
+      JsonHelper.getString(rec, 'name', ''),
+      JsonHelper.getString(rec, 'kind', ''),
+      JsonHelper.getString(rec, 'base_url', ''),
+      JsonHelper.getString(rec, 'description', ''),
+      models
+    );
+  }
+
+  static parseList(text: string): Array<ProviderPresetModel> {
+    const result: Array<ProviderPresetModel> = [];
+    const arr = JsonHelper.parseArray(text);
+    if (arr !== null) {
+      for (const rec of arr) {
+        result.push(ProviderPresetModel.fromRecord(rec));
+      }
+      return result;
+    }
+    const obj = JsonHelper.parse(text);
+    const items = JsonHelper.getRecordArray(obj, 'presets');
+    for (const rec of items) {
+      result.push(ProviderPresetModel.fromRecord(rec));
     }
     return result;
   }

@@ -8,6 +8,14 @@ const KEY_DISPLAY_NAME = 'display_name';
 const KEY_ROLE = 'role';
 const KEY_APPEARANCE = 'appearance_mode';
 const KEY_IMMERSIVE = 'immersive_light';
+const KEY_PET_VISIBLE = 'pet_visible';
+const KEY_TTS_BACKEND = 'tts_backend';
+const KEY_TTS_SPEED = 'tts_speed';
+const KEY_TTS_PITCH = 'tts_pitch';
+const KEY_TTS_VOLUME = 'tts_volume';
+const KEY_TTS_PERSON = 'tts_person';
+const KEY_TTS_ONLINE = 'tts_online';
+const KEY_LAST_AGENT_ID = 'last_agent_id';
 
 /** 本地持久化的用户资料（仅展示用途，敏感数据不落盘） */
 export class UserProfilePref {
@@ -66,6 +74,15 @@ export class AppPrefs {
     return new UserProfilePref(username, displayName, role);
   }
 
+  /** 专家记忆：上次使用的专家 agentId（'' 表无记录/清除；logout clearAll 自动连带清除，换账号不串专家） */
+  async getLastAgentId(): Promise<string> {
+    return await this.getString(KEY_LAST_AGENT_ID);
+  }
+
+  async setLastAgentId(id: string): Promise<void> {
+    await this.putString(KEY_LAST_AGENT_ID, id);
+  }
+
   async getImmersiveLight(): Promise<boolean> {
     if (this.store === null) {
       return true;
@@ -91,12 +108,98 @@ export class AppPrefs {
     }
   }
 
+  /** 聊天页头部宠物显隐（默认开） */
+  async getPetVisible(): Promise<boolean> {
+    if (this.store === null) {
+      return true;
+    }
+    try {
+      const v = await this.store.get(KEY_PET_VISIBLE, true);
+      return v === true;
+    } catch (e) {
+      Log.error('get pet visible failed');
+      return true;
+    }
+  }
+
+  async setPetVisible(on: boolean): Promise<void> {
+    if (this.store === null) {
+      return;
+    }
+    try {
+      await this.store.put(KEY_PET_VISIBLE, on);
+      await this.store.flush();
+    } catch (e) {
+      Log.error('set pet visible failed');
+    }
+  }
+
   async getAppearance(): Promise<string> {
     return await this.getString(KEY_APPEARANCE);
   }
 
   async setAppearance(mode: string): Promise<void> {
     await this.putString(KEY_APPEARANCE, mode);
+  }
+
+  /** TTS 后端：'local' 本机引擎 | 'server' 服务器（默认，存量用户行为不变） */
+  async getTtsBackend(): Promise<string> {
+    const value = await this.getString(KEY_TTS_BACKEND);
+    return value === 'local' ? 'local' : 'server';
+  }
+
+  async setTtsBackend(backend: string): Promise<void> {
+    await this.putString(KEY_TTS_BACKEND, backend === 'local' ? 'local' : 'server');
+  }
+
+  async getTtsSpeed(): Promise<number> {
+    return await this.getNumber(KEY_TTS_SPEED, 1.0);
+  }
+
+  async setTtsSpeed(value: number): Promise<void> {
+    await this.putString(KEY_TTS_SPEED, `${value}`);
+  }
+
+  async getTtsPitch(): Promise<number> {
+    return await this.getNumber(KEY_TTS_PITCH, 1.0);
+  }
+
+  async setTtsPitch(value: number): Promise<void> {
+    await this.putString(KEY_TTS_PITCH, `${value}`);
+  }
+
+  async getTtsVolume(): Promise<number> {
+    return await this.getNumber(KEY_TTS_VOLUME, 2);
+  }
+
+  async setTtsVolume(value: number): Promise<void> {
+    await this.putString(KEY_TTS_VOLUME, `${value}`);
+  }
+
+  async getTtsPerson(): Promise<number> {
+    return await this.getNumber(KEY_TTS_PERSON, 13);
+  }
+
+  async setTtsPerson(value: number): Promise<void> {
+    await this.putString(KEY_TTS_PERSON, `${value}`);
+  }
+
+  async getTtsOnline(): Promise<number> {
+    return await this.getNumber(KEY_TTS_ONLINE, 1);
+  }
+
+  async setTtsOnline(value: number): Promise<void> {
+    await this.putString(KEY_TTS_ONLINE, `${value}`);
+  }
+
+  /** 数值键读取：字符串 → number 归一，NaN/缺失回退默认值 */
+  private async getNumber(key: string, def: number): Promise<number> {
+    const raw = await this.getString(key);
+    if (raw === '') {
+      return def;
+    }
+    const value = Number(raw);
+    return Number.isNaN(value) ? def : value;
   }
 
   async clearAll(): Promise<void> {

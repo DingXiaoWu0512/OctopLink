@@ -125,11 +125,17 @@ export class ChatStreamController {
       frame['model'] = model;
     }
     if (attachments !== undefined && attachments.length > 0) {
-      const items: Array<Record<string, Object>> = [];
-      for (const att of attachments) {
-        items.push(att.toFrameItem());
+      // 服务器只认 messages[0].content 内嵌的 image/file 块，顶层 attachments 会被静默丢弃
+      const blocks: Array<Record<string, Object>> = [];
+      const trimmed: string = text.trim();
+      if (trimmed !== '') {
+        blocks.push({ 'type': 'text', 'text': trimmed });
       }
-      frame['attachments'] = items;
+      for (const att of attachments) {
+        blocks.push(att.toContentBlock());
+      }
+      const message: Record<string, Object> = { 'role': 'user', 'content': blocks };
+      frame['messages'] = [message];
     }
     await this.ws.send(JSON.stringify(frame));
   }

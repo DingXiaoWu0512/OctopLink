@@ -8,6 +8,8 @@ import { KnowledgeDocsNavParam } from './KnowledgeDocsPage';
 import { PageHeader } from '../../components/PageHeader';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
 import { TimeFormat } from '../../utils/TimeFormat';
+import { MenuSheetContent, MenuSheetOption } from '../../components/MenuSheet';
+import { picker, fileIo } from '@kit.CoreFileKit';
 
 /** 知识库列表（用户级） */
 @Component
@@ -18,6 +20,16 @@ export struct KnowledgePage {
   @State refreshing: boolean = false;
   @State errorMsg: string = '';
   @State operating: boolean = false;
+  @State menuOpen: boolean = false;
+  @State menuTitle: string = '';
+  @State menuMessage: string = '';
+  @State menuOptions: Array<MenuSheetOption> = [];
+  /** KB 头像版本号：上传/删除后自增以刷新 Image 缓存（key=kbId） */
+  @State avatarRevs: Map<string, number> = new Map();
+  /** 加载失败（无自定义头像）的 KB id 集合，回退显示默认图标 */
+  @State avatarFailed: string[] = [];
+  private avatarController: CustomDialogController | null = null;
+  private menuActions: Array<() => void> = [];
   private createController: CustomDialogController | null = null;
 
   aboutToAppear(): void {
@@ -72,24 +84,31 @@ export struct KnowledgePage {
 
   /** 长按库：操作菜单 */
   private showBaseMenu(base: KnowledgeBaseModel): void {
-    this.getUIContext().showActionSheet({
-      title: base.name,
-      message: '选择要执行的操作',
-      sheets: [
-        {
-          title: '编辑知识库',
-          action: (): void => {
-            this.editBase(base);
-          }
-        },
-        {
-          title: '删除知识库',
-          action: (): void => {
-            this.confirmDelete(base);
-          }
-        }
-      ]
-    });
+    this.menuTitle = base.name;
+    this.menuMessage = '选择要执行的操作';
+    this.menuOptions = [
+      new MenuSheetOption($r('sys.symbol.square_and_pencil'), '编辑知识库', '名称、描述与共享设置', false),
+      new MenuSheetOption($r('sys.symbol.trash'), '删除知识库', '将同时删除全部文档与索引', true)
+    ];
+    this.menuActions = [
+      (): void => {
+        this.editBase(base);
+      },
+      (): void => {
+        this.confirmDelete(base);
+      }
+    ];
+    this.menuOpen = true;
+  }
+
+  /** 菜单选中：先关半模态再执行预置动作（越界保护） */
+  private onMenuSelect(index: number): void {
+    this.menuOpen = false;
+    if (index < 0 || index >= this.menuActions.length) {
+      return;
+    }
+    const action: () => void = this.menuActions[index];
+    action();
   }
 
   private confirmDelete(base: KnowledgeBaseModel): void {
@@ -124,6 +143,94 @@ export struct KnowledgePage {
       this.getUIContext().getPromptAction().showToast({ message });
     } finally {
       this.operating = false;
+    }
+  }
+
+  // ---- KB 头像 ----
+
+  private avatarRevOf(kbId: string): number {
+    const rev: number | undefined = this.avatarRevs.get(kbId);
+    return rev === undefined ? 0 : rev;
+  }
+
+  private showAvatarMenu(base: KnowledgeBaseModel): void {
+    this.menuTitle = base.name;
+    this.menuMessage = '知识库头像';
+    this.menuOptions = [
+      new MenuSheetOption($r('sys.symbol.picture'), '上传头像', '从文件选取', false),
+      new MenuSheetOption($r('sys.symbol.trash'), '删除头像', '恢复默认图标', true)
+    ];
+    this.menuActions = [
+      (): void => {
+        this.pickAndUploadAvatar(base.id);
+      },
+      (): void => {
+        this.deleteAvatar(base.id);
+      }
+    ];
+    this.menuOpen = true;
+  }
+
+  private async pickAndUploadAvatar(kbId: string): Promise<void> {
+    const docPicker = new picker.DocumentViewPicker();
+    const options = new picker.DocumentSelectOptions();
+    options.maxSelectNumber = 1;
+    let uris: Array<string> = [];
+    try {
+      uris = await docPicker.select(options);
+    } catch (e) {
+      return;
+    }
+    if (uris.length === 0) {
+      return;
+    }
+    const uri: string = uris[0];
+    const idx: number = uri.lastIndexOf('/');
+    const fileName: string = idx >= 0 ? uri.substring(idx + 1) : 'avatar.png';
+    try {
+      const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+      let data: ArrayBuffer;
+      try {
+        const stat = fileIo.statSync(file.fd);
+        data = new ArrayBuffer(stat.size);
+        fileIo.readSync(file.fd, data);
+      } finally {
+        fileIo.closeSync(file.fd);
+      }
+      let contentType: string = 'application/octet-stream';
+      const lower: string = fileName.toLowerCase();
+      if (lower.endsWith('.png')) {
+        contentType = 'image/png';
+      } else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+        contentType = 'image/jpeg';
+      } else if (lower.endsWith('.webp')) {
+        contentType = 'image/webp';
+      }
+      await KnowledgeService.uploadAvatar(kbId, fileName, contentType, data);
+      const rev: number = this.avatarRevOf(kbId);
+      const revs: Map<string, number> = new Map(this.avatarRevs);
+      revs.set(kbId, rev + 1);
+      this.avatarRevs = revs;
+      this.avatarFailed = this.avatarFailed.filter((id: string): boolean => id !== kbId);
+      this.getUIContext().getPromptAction().showToast({ message: '头像已更新' });
+    } catch (e) {
+      const message: string = e instanceof OctopApiError ? e.message : '头像上传失败';
+      this.getUIContext().getPromptAction().showToast({ message });
+    }
+  }
+
+  private async deleteAvatar(kbId: string): Promise<void> {
+    try {
+      await KnowledgeService.deleteAvatar(kbId);
+      const rev: number = this.avatarRevOf(kbId);
+      const revs: Map<string, number> = new Map(this.avatarRevs);
+      revs.set(kbId, rev + 1);
+      this.avatarRevs = revs;
+      this.avatarFailed = this.avatarFailed.filter((id: string): boolean => id !== kbId);
+      this.getUIContext().getPromptAction().showToast({ message: '头像已删除' });
+    } catch (e) {
+      const message: string = e instanceof OctopApiError ? e.message : '删除失败';
+      this.getUIContext().getPromptAction().showToast({ message });
     }
   }
 
@@ -172,16 +279,38 @@ export struct KnowledgePage {
                 ForEach(this.bases, (base: KnowledgeBaseModel) => {
                   ListItem() {
                     Row({ space: 12 }) {
-                      Column() {
-                        SymbolGlyph($r('sys.symbol.book'))
-                          .fontSize(21)
-                          .fontColor([$r('app.color.success')])
+                      Stack() {
+                        if (this.avatarFailed.indexOf(base.id) >= 0) {
+                          Column() {
+                            SymbolGlyph($r('sys.symbol.book'))
+                              .fontSize(21)
+                              .fontColor([$r('app.color.success')])
+                          }
+                          .width(44)
+                          .height(44)
+                          .justifyContent(FlexAlign.Center)
+                          .backgroundColor($r('app.color.success_soft'))
+                          .borderRadius(14)
+                        }
+                        Image(KnowledgeService.avatarUrlWithRev(base.id, this.avatarRevOf(base.id)))
+                          .width(44)
+                          .height(44)
+                          .borderRadius(14)
+                          .objectFit(ImageFit.Cover)
+                          .opacity(this.avatarFailed.indexOf(base.id) >= 0 ? 0 : 1)
+                          .onClick((): void => {
+                            this.showAvatarMenu(base);
+                          })
+                          .onError((): void => {
+                            if (this.avatarFailed.indexOf(base.id) < 0) {
+                              const next: string[] = this.avatarFailed.slice();
+                              next.push(base.id);
+                              this.avatarFailed = next;
+                            }
+                          })
                       }
                       .width(44)
                       .height(44)
-                      .justifyContent(FlexAlign.Center)
-                      .backgroundColor($r('app.color.success_soft'))
-                      .borderRadius(14)
                       Column({ space: 5 }) {
                         Row({ space: 6 }) {
                           Text(base.name)
@@ -289,5 +418,22 @@ export struct KnowledgePage {
     }
     .hideTitleBar(true)
     .backgroundColor($r('app.color.bg_page'))
+    .bindSheet($$this.menuOpen, this.menuSheetBuilder, {
+      detents: [SheetSize.FIT_CONTENT],
+      showClose: true,
+      systemMaterial: UiMaterialKit.sheet()
+    })
+  }
+
+  @Builder
+  menuSheetBuilder() {
+    MenuSheetContent({
+      title: this.menuTitle,
+      message: this.menuMessage,
+      options: this.menuOptions,
+      onSelect: (index: number): void => {
+        this.onMenuSelect(index);
+      }
+    })
   }
 }

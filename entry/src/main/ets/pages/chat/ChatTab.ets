@@ -10,6 +10,7 @@ import { ThreadRenameDialog } from '../../components/ThreadRenameDialog';
 import { ThreadSettingsNavParam } from './ThreadSettingsPage';
 import { TimeFormat } from '../../utils/TimeFormat';
 import { ThreadDigestCache } from '../../utils/ThreadDigestCache';
+import { MenuSheetContent, MenuSheetOption } from '../../components/MenuSheet';
 
 /** 会话分组（置顶无表头 / 今天 / 昨天 / 7天内 / 更早） */
 class SessionsThreadGroup {
@@ -39,6 +40,11 @@ export struct SessionsTab {
   /** 以独立页面（NavDestination）形式使用：隐藏内部大标题并返回时 pop */
   @Prop asPage: boolean = false;
   private renameController: CustomDialogController | null = null;
+  @State menuOpen: boolean = false;
+  @State menuTitle: string = '';
+  @State menuMessage: string = '';
+  @State menuOptions: Array<MenuSheetOption> = [];
+  private menuActions: Array<() => void> = [];
 
   aboutToAppear(): void {
     this.reload();
@@ -164,44 +170,45 @@ export struct SessionsTab {
     }
   }
 
-  /** 长按会话：操作菜单（置顶/重命名/删除） */
+  /** 长按会话：操作菜单（置顶/重命名/分叉/会话设置/删除） */
   private showThreadMenu(thread: ThreadModel): void {
-    const sheets: Array<SheetInfo> = [];
-    sheets.push({
-      title: thread.pinned ? '取消置顶' : '置顶该会话',
-      action: (): void => {
+    this.menuTitle = thread.title === '' ? '新对话' : thread.title;
+    this.menuMessage = '选择要执行的操作';
+    this.menuOptions = [
+      new MenuSheetOption($r('sys.symbol.pin'), thread.pinned ? '取消置顶' : '置顶该会话', '', false),
+      new MenuSheetOption($r('sys.symbol.pencil_line'), '重命名会话', '', false),
+      new MenuSheetOption($r('sys.symbol.route'), '从最后回复分叉', '以最后一条助手回复续开新会话', false),
+      new MenuSheetOption($r('sys.symbol.gearshape'), '会话设置', '模型/推理/对话模式/审批策略', false),
+      new MenuSheetOption($r('sys.symbol.trash'), '删除会话', '', true)
+    ];
+    this.menuActions = [
+      (): void => {
         this.togglePinned(thread);
-      }
-    });
-    sheets.push({
-      title: '重命名会话',
-      action: (): void => {
+      },
+      (): void => {
         this.showRenameDialog(thread);
-      }
-    });
-    sheets.push({
-      title: '从最后回复分叉',
-      action: (): void => {
+      },
+      (): void => {
         this.forkFromLast(thread);
-      }
-    });
-    sheets.push({
-      title: '会话设置',
-      action: (): void => {
+      },
+      (): void => {
         this.openThreadSettings(thread);
-      }
-    });
-    sheets.push({
-      title: '删除会话',
-      action: (): void => {
+      },
+      (): void => {
         this.confirmDeleteThread(thread);
       }
-    });
-    this.getUIContext().showActionSheet({
-      title: thread.title === '' ? '新对话' : thread.title,
-      message: '选择要执行的操作',
-      sheets: sheets
-    });
+    ];
+    this.menuOpen = true;
+  }
+
+  /** 菜单选中：先关半模态再执行预置动作（越界保护） */
+  private onMenuSelect(index: number): void {
+    this.menuOpen = false;
+    if (index < 0 || index >= this.menuActions.length) {
+      return;
+    }
+    const action: () => void = this.menuActions[index];
+    action();
   }
 
   private async togglePinned(thread: ThreadModel): Promise<void> {
@@ -636,5 +643,22 @@ export struct SessionsTab {
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .bindSheet($$this.menuOpen, this.menuSheetBuilder, {
+      detents: [SheetSize.FIT_CONTENT],
+      showClose: true,
+      systemMaterial: UiMaterialKit.sheet()
+    })
+  }
+
+  @Builder
+  menuSheetBuilder() {
+    MenuSheetContent({
+      title: this.menuTitle,
+      message: this.menuMessage,
+      options: this.menuOptions,
+      onSelect: (index: number): void => {
+        this.onMenuSelect(index);
+      }
+    })
   }
 }

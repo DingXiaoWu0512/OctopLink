@@ -3,29 +3,39 @@ export struct EmptyView {
   title: string = '';
   subtitle: string = '';
   icon: Resource = $r('sys.symbol.message');
+  /** true：图标区渲染探头章鱼动画（默认升级）；false：回退原 SymbolGlyph 圆形徽章 */
+  mascot: boolean = true;
 
   build() {
     Column({ space: 10 }) {
-      Column() {
+      if (this.mascot) {
+        Image($r('app.media.octop_mascot_peek'))
+          .width(96)
+          .height(64)
+          .objectFit(ImageFit.Contain)
+          .interpolation(ImageInterpolation.None)
+      } else {
         Column() {
-          SymbolGlyph(this.icon)
-            .fontSize(30)
-            .fontColor([$r('app.color.brand')])
+          Column() {
+            SymbolGlyph(this.icon)
+              .fontSize(30)
+              .fontColor([$r('app.color.brand')])
+          }
+          .width(72)
+          .height(72)
+          .borderRadius(36)
+          .backgroundColor($r('app.color.brand_light'))
+          .justifyContent(FlexAlign.Center)
         }
-        .width(72)
-        .height(72)
-        .borderRadius(36)
+        .width(96)
+        .height(96)
+        .borderRadius(48)
+        .border({ width: 1, color: $r('app.color.card_stroke') })
         .backgroundColor($r('app.color.brand_light'))
+        .opacity(0.4)
         .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
       }
-      .width(96)
-      .height(96)
-      .borderRadius(48)
-      .border({ width: 1, color: $r('app.color.card_stroke') })
-      .backgroundColor($r('app.color.brand_light'))
-      .opacity(0.4)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
       Text(this.title)
         .fontSize(16)
         .fontWeight(FontWeight.Medium)

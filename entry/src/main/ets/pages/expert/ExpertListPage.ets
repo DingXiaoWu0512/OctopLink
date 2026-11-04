@@ -4,11 +4,14 @@ import { AgentModel } from '../../model/AgentModels';
 import { AgentService } from '../../service/AgentService';
 import { OctopApiError } from '../../net/HttpClient';
 import { SessionStore } from '../../store/SessionStore';
+import { AppPrefs } from '../../store/AppPrefs';
 import { EmptyView } from '../../components/EmptyView';
 import { ErrorRetry } from '../../components/ErrorRetry';
 import { AgentEditNavParam } from './AgentEditPage';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
 import { AgentAvatar } from '../../components/AgentAvatar';
+import { CapsuleSegmentBar, SegmentBarOption } from '../../components/CapsuleSegmentBar';
+import { MenuSheetContent, MenuSheetOption } from '../../components/MenuSheet';
 
 /** 专家筛选 chips 文案 */
 class ExpertFilterOption {
@@ -39,6 +42,11 @@ export struct ExpertListPage {
   @StorageLink('immersive.light.on') immersiveOn: boolean = true;
   @State searching: boolean = false;
   @State keyword: string = '';
+  @State menuOpen: boolean = false;
+  @State menuTitle: string = '';
+  @State menuMessage: string = '';
+  @State menuOptions: Array<MenuSheetOption> = [];
+  private menuActions: Array<() => void> = [];
   private scroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
@@ -118,32 +126,39 @@ export struct ExpertListPage {
 
   /** 长按专家：操作菜单（owner 可编辑/删除） */
   private showAgentMenu(agent: AgentModel): void {
-    const sheets: Array<SheetInfo> = [];
+    this.menuTitle = agent.name;
+    this.menuMessage = '选择要执行的操作';
     if (agent.isOwner) {
-      sheets.push({
-        title: '编辑专家',
-        action: (): void => {
+      this.menuOptions = [
+        new MenuSheetOption($r('sys.symbol.square_and_pencil'), '编辑专家', '修改资料、人设与模型', false),
+        new MenuSheetOption($r('sys.symbol.trash'), '删除专家', '', true)
+      ];
+      this.menuActions = [
+        (): void => {
           this.navStack.pushPath(new NavPathInfo('agentEdit', new AgentEditNavParam(agent.agentId)));
-        }
-      });
-      sheets.push({
-        title: '删除专家',
-        action: (): void => {
+        },
+        (): void => {
           this.confirmDeleteAgent(agent);
         }
-      });
+      ];
     } else {
-      sheets.push({
-        title: `由 @${agent.ownerUsername === '' ? '他人' : agent.ownerUsername} 共享`,
-        action: (): void => {
-        }
-      });
+      this.menuOptions = [
+        new MenuSheetOption($r('sys.symbol.person_2'),
+          `由 @${agent.ownerUsername === '' ? '他人' : agent.ownerUsername} 共享`, '', false)
+      ];
+      this.menuActions = [];
     }
-    this.getUIContext().showActionSheet({
-      title: agent.name,
-      message: '选择要执行的操作',
-      sheets: sheets
-    });
+    this.menuOpen = true;
+  }
+
+  /** 菜单选中：先关半模态再执行预置动作（越界保护） */
+  private onMenuSelect(index: number): void {
+    this.menuOpen = false;
+    if (index < 0 || index >= this.menuActions.length) {
+      return;
+    }
+    const action: () => void = this.menuActions[index];
+    action();
   }
 
   private confirmDeleteAgent(agent: AgentModel): void {
@@ -177,6 +192,8 @@ export struct ExpertListPage {
         AppStorage.setOrCreate(SessionStore.KEY_AGENT_NAME, '');
         AppStorage.setOrCreate(SessionStore.KEY_AGENT_WELCOME, '');
         AppStorage.setOrCreate(SessionStore.KEY_AGENT_MODEL, '');
+        // 专家记忆：删除的是当前专家，同步清持久化（防下次启动恢复已删 id）
+        AppPrefs.getInstance().setLastAgentId('');
       }
       this.getUIContext().getPromptAction().showToast({ message: '已删除' });
       await this.load();
@@ -189,22 +206,23 @@ export struct ExpertListPage {
     }
   }
 
-  @Builder
-  chipBuilder(option: ExpertFilterOption) {
-    Text(option.label)
-      .fontSize(13)
-      .fontWeight(option.value === this.filterIndex ? FontWeight.Medium : FontWeight.Normal)
-      .fontColor(option.value === this.filterIndex ? $r('app.color.brand') : $r('app.color.text_secondary'))
-      .padding({ left: 14, right: 14, top: 7, bottom: 7 })
-      .borderRadius(16)
-      .backgroundColor(option.value === this.filterIndex ?
-        $r('app.color.brand_light') : $r('app.color.bg_input'))
-      .onClick((): void => {
-        if (this.filterIndex !== option.value) {
-          this.filterIndex = option.value;
-          this.load();
-        }
-      })
+  /** 滑动胶囊分段选项（由 ExpertFilterOption 映射，value 与 filterIndex 一致） */
+  private segmentOptions(): Array<SegmentBarOption> {
+    return this.filterOptions().map((option: ExpertFilterOption): SegmentBarOption =>
+      new SegmentBarOption(option.label, `${option.value}`));
+  }
+
+  /** 滑动胶囊选中回调：复用既有 filterIndex 切换 + load() */
+  private onSegmentSelect(index: number): void {
+    const options: Array<ExpertFilterOption> = this.filterOptions();
+    if (index < 0 || index >= options.length) {
+      return;
+    }
+    const value: number = options[index].value;
+    if (this.filterIndex !== value) {
+      this.filterIndex = value;
+      this.load();
+    }
   }
 
   @Builder
@@ -341,7 +359,7 @@ export struct ExpertListPage {
     )
   }
 
-  /** HdsNavigation 标题栏底部自定义区：搜索框 / 筛选 chips（列表从玻璃下方滚过） */
+  /** HdsNavigation 标题栏底部自定义区：搜索框 / 滑动胶囊筛选（列表从玻璃下方滚过） */
   @Builder
   searchFilterBuilder() {
     if (this.searching) {
@@ -360,11 +378,13 @@ export struct ExpertListPage {
           this.keyword = value;
         })
     } else {
-      Row({ space: 8 }) {
-        ForEach(this.filterOptions(), (option: ExpertFilterOption) => {
-          this.chipBuilder(option)
-        }, (option: ExpertFilterOption) => `${option.value}_${this.filterIndex === option.value}`)
-      }
+      CapsuleSegmentBar({
+        options: this.segmentOptions(),
+        selectedIndex: this.filterIndex,
+        onSelect: (index: number): void => {
+          this.onSegmentSelect(index);
+        }
+      })
       .width('100%')
       .padding({ left: 16, right: 16, bottom: 8 })
     }
@@ -415,6 +435,13 @@ export struct ExpertListPage {
       } else {
         Refresh({ refreshing: $$this.refreshing }) {
           List({ space: 10, scroller: this.scroller }) {
+            // 头部占位项：静止时避开标题栏区域。不用 contentStartOffset——它滚动回顶后
+            // 会失效（真机实测），内容项占位随数据重建保留，位置不会丢。
+            // 固定常量：MINI 标题栏（单行标题 + chips 行）≈ 145vp + 间距
+            ListItem()
+              .height(150)
+              .width('100%')
+              .hitTestBehavior(HitTestMode.None)
             if (this.visibleAgents().length === 0) {
               ListItem() {
                 Column() {
@@ -433,11 +460,18 @@ export struct ExpertListPage {
               }
             }, (agent: AgentModel) =>
               `${agent.agentId}_${agent.state}_${agent.unreadCount}_${agent.agentId === this.currentAgentId}`)
+            // 尾部占位项：最后一张卡片完整停在悬浮导航栏上方（与顶部 150 占位同构，
+            // 不用 contentEndOffset——滚动回顶后会失效（真机实测））
+            ListItem()
+              .height(this.bottomPad)
+              .width('100%')
+              .hitTestBehavior(HitTestMode.None)
           }
           .width('100%')
           .height('100%')
           .padding({ left: 16, right: 16, bottom: 0 })
-          .contentStartOffset(this.topInset + 146)
+          .clip(false)
+          .cachedCount(3, true)
           .scrollBar(BarState.Off)
         }
         .layoutWeight(1)
@@ -449,18 +483,22 @@ export struct ExpertListPage {
       }
       .width('100%')
       .height('100%')
+      // 内容延伸进状态栏区（与聊天页一致）：滚动正文从标题栏/状态栏下穿过，由 GRADUAL_BLUR 提供光感
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
     }
     .titleBar({
+      avoidLayoutSafeArea: true,
       style: {
         scrollEffectOpts: {
           enableScrollEffect: this.immersiveOn,
-          scrollEffectType: ScrollEffectType.GRADUAL_BLUR,
+          scrollEffectType: ScrollEffectType.IMMERSIVE_GRADIENT_BLUR,
+          enableRefreshOffsetChange: false,
           blurEffectiveStartOffset: LengthMetrics.vp(0),
           blurEffectiveEndOffset: LengthMetrics.vp(20)
         },
         systemMaterialEffect: {
-          materialType: hdsMaterial.MaterialType.NONE,
+          materialType: this.immersiveOn ? hdsMaterial.MaterialType.IMMERSIVE : hdsMaterial.MaterialType.NONE,
           materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
         },
         originalStyle: {
@@ -529,12 +567,28 @@ export struct ExpertListPage {
         }
       }
     })
-    .titleMode(HdsNavigationTitleMode.FREE)
+    .titleMode(HdsNavigationTitleMode.MINI)
     .hideBackButton(true)
     .bindToScrollable([this.scroller])
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))
-    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
+    .bindSheet($$this.menuOpen, this.menuSheetBuilder, {
+      detents: [SheetSize.FIT_CONTENT],
+      showClose: true,
+      systemMaterial: UiMaterialKit.sheet()
+    })
+  }
+
+  @Builder
+  menuSheetBuilder() {
+    MenuSheetContent({
+      title: this.menuTitle,
+      message: this.menuMessage,
+      options: this.menuOptions,
+      onSelect: (index: number): void => {
+        this.onMenuSelect(index);
+      }
+    })
   }
 }

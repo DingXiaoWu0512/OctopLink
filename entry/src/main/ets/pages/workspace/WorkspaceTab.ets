@@ -2,6 +2,8 @@ import { LengthMetrics } from '@kit.ArkUI';
 import { HdsNavigation, HdsNavigationTitleMode, ScrollEffectType, hdsMaterial } from '@kit.UIDesignKit';
 import { SessionStore } from '../../store/SessionStore';
 import { ChannelService, ConnectorService, CronService, KnowledgeService, PluginService } from '../../service/WorkspaceService';
+import { SkillService } from '../../service/SkillService';
+import { UiMaterialKit } from '../../components/UiMaterialKit';
 
 class WorkspaceRow {
   readonly name: string;
@@ -34,6 +36,17 @@ class WorkspaceSection {
   }
 }
 
+/** statCard @Builder 按引用传参选项（@Builder 值传参不随 @State 刷新，曾导致统计卡恒显「—」） */
+interface WsStatCardOptions {
+  icon: Resource;
+  count: number;
+  label: string;
+  color: Resource;
+  softColor: Resource;
+  route: string;
+  needsAgent: boolean;
+}
+
 const SECTION_LIST: Array<WorkspaceSection> = [
   new WorkspaceSection('自动化', [
     new WorkspaceRow('定时任务', '让专家按计划自动执行', 'cron',
@@ -44,14 +57,36 @@ const SECTION_LIST: Array<WorkspaceSection> = [
   new WorkspaceSection('知识与数据', [
     new WorkspaceRow('知识库', '管理文档与数据源', 'knowledge',
       $r('sys.symbol.book'), $r('app.color.success'), $r('app.color.success_soft'), false),
+    new WorkspaceRow('工作区文件', '浏览与管理工作区目录', 'workspaceFiles',
+      $r('sys.symbol.folder_fill'), $r('app.color.success'), $r('app.color.success_soft'), true),
     new WorkspaceRow('连接器', '外部工具与 MCP 服务', 'connectors',
       $r('sys.symbol.link'), $r('app.color.warning'), $r('app.color.warning_soft'), false)
   ]),
   new WorkspaceSection('专家配置', [
+    new WorkspaceRow('技能', '提示词技能与市场安装', 'skills',
+      $r('sys.symbol.wand_and_stars'), $r('app.color.brand'), $r('app.color.brand_light'), true),
+    new WorkspaceRow('技能包', '技能合集的打包与挂载', 'skillPackages',
+      $r('sys.symbol.square_grid_2x2'), $r('app.color.brand'), $r('app.color.brand_light'), true),
+    new WorkspaceRow('子代理', '安装子代理协同专家工作', 'subagents',
+      $r('sys.symbol.robot'), $r('app.color.success'), $r('app.color.success_soft'), true),
+    new WorkspaceRow('工具开关', '按专家启停内置与插件工具', 'toolSettings',
+      $r('sys.symbol.wrench_and_screwdriver'), $r('app.color.warning'), $r('app.color.warning_soft'), true),
     new WorkspaceRow('插件', '按专家启用能力扩展', 'plugins',
       $r('sys.symbol.puzzle'), $r('app.color.brand'), $r('app.color.brand_light'), true),
     new WorkspaceRow('MBTI 人格', '为专家设定性格底色', 'mbti',
-      $r('sys.symbol.face_smiling'), $r('app.color.danger'), $r('app.color.danger_soft'), true)
+      $r('sys.symbol.face_smiling'), $r('app.color.danger'), $r('app.color.danger_soft'), true),
+    new WorkspaceRow('记忆', '专家的长期记忆管理', 'memory',
+      $r('sys.symbol.lightbulb'), $r('app.color.warning'), $r('app.color.warning_soft'), true)
+  ]),
+  new WorkspaceSection('运营管理', [
+    new WorkspaceRow('用量统计', 'Token 消耗与模型调用', 'usage',
+      $r('sys.symbol.bolt'), $r('app.color.brand'), $r('app.color.brand_light'), false),
+    new WorkspaceRow('用户组', '分组管理与批量授权', 'userGroups',
+      $r('sys.symbol.person_2'), $r('app.color.warning'), $r('app.color.warning_soft'), false),
+    new WorkspaceRow('邀请码', '注册邀请码创建与吊销', 'invites',
+      $r('sys.symbol.paperplane'), $r('app.color.brand'), $r('app.color.brand_light'), false),
+    new WorkspaceRow('桥接设备', '跨实例 Bridge 连接管理', 'bridge',
+      $r('sys.symbol.wifi'), $r('app.color.success'), $r('app.color.success_soft'), false)
   ])
 ];
 
@@ -60,7 +95,6 @@ const SECTION_LIST: Array<WorkspaceSection> = [
 export struct WorkspaceTab {
   @Consume('navStack') navStack: NavPathStack;
   @StorageProp(SessionStore.KEY_AGENT_ID) @Watch('onAgentChanged') agentId: string = '';
-  @StorageProp(SessionStore.KEY_AGENT_NAME) agentName: string = '';
   @StorageLink('immersive.light.on') immersiveOn: boolean = true;
   @State refreshing: boolean = false;
   @State cronCount: number = -1;
@@ -68,6 +102,7 @@ export struct WorkspaceTab {
   @State kbCount: number = -1;
   @State connectorCount: number = -1;
   @State pluginCount: number = -1;
+  @State skillCount: number = -1;
   @Prop topInset: number = 0;
   @Prop bottomPad: number = 72;
   private scroller: Scroller = new Scroller();
@@ -80,6 +115,7 @@ export struct WorkspaceTab {
     this.cronCount = -1;
     this.channelCount = -1;
     this.pluginCount = -1;
+    this.skillCount = -1;
     this.refreshAll();
   }
 
@@ -91,6 +127,7 @@ export struct WorkspaceTab {
       tasks.push(this.fetchCron());
       tasks.push(this.fetchChannels());
       tasks.push(this.fetchPlugins());
+      tasks.push(this.fetchSkills());
     }
     await Promise.all(tasks);
     this.refreshing = false;
@@ -148,6 +185,18 @@ export struct WorkspaceTab {
     }
   }
 
+  private async fetchSkills(): Promise<void> {
+    if (this.agentId === '') {
+      this.skillCount = -1;
+      return;
+    }
+    try {
+      this.skillCount = (await SkillService.list(this.agentId)).length;
+    } catch (e) {
+      this.skillCount = -1;
+    }
+  }
+
   private countFor(route: string): number {
     if (route === 'cron') {
       return this.cronCount;
@@ -164,11 +213,10 @@ export struct WorkspaceTab {
     if (route === 'plugins') {
       return this.pluginCount;
     }
+    if (route === 'skills') {
+      return this.skillCount;
+    }
     return -2;
-  }
-
-  private countText(count: number): string {
-    return count < 0 ? '—' : `${count}`;
   }
 
   private openRoute(route: string, needsAgent: boolean): void {
@@ -179,79 +227,43 @@ export struct WorkspaceTab {
     this.navStack.pushPath(new NavPathInfo(route, null));
   }
 
-  private goExpert(): void {
-    AppStorage.setOrCreate(SessionStore.KEY_MAIN_TAB, 0);
-  }
-
   @Builder
-  heroBuilder() {
-    Button({ type: ButtonType.Normal, stateEffect: true }) {
-      Row({ space: 12 }) {
-        Column() {
-          Image($r('app.media.octop_logo'))
-            .width(24)
-            .height(24)
-            .borderRadius(12)
-        }
-        .width(38)
-        .height(38)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-        .backgroundColor($r('app.color.bg_input'))
-        .borderRadius(12)
-
-        Column({ space: 2 }) {
-          Text(this.agentId === '' ? '未选择专家' : '当前专家')
-            .fontSize(10)
-            .fontColor($r('app.color.text_tertiary'))
-          Text(this.agentId === '' ? '点击前往专家页选择' : this.agentName)
-            .fontSize(15)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.text_primary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-
-        SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor([$r('app.color.text_tertiary')])
-      }
-      .width('100%')
-      .padding({ left: 14, right: 14, top: 10, bottom: 10 })
-    }
-    .width('100%')
-    .borderRadius(18)
-    .backgroundColor($r('app.color.card_glass'))
-    .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
-    .onClick((): void => {
-      this.goExpert();
-    })
-  }
-
-  @Builder
-  statCard(icon: Resource, count: number, label: string, color: Resource, softColor: Resource,
-    route: string, needsAgent: boolean) {
+  statCard($$: WsStatCardOptions) {
     Column({ space: 7 }) {
       Row() {
-        SymbolGlyph(icon)
+        SymbolGlyph($$.icon)
           .fontSize(15)
-          .fontColor([color])
+          .fontColor([$$.color])
       }
       .width(28)
       .height(28)
       .justifyContent(FlexAlign.Center)
-      .backgroundColor(softColor)
+      .backgroundColor($$.softColor)
       .borderRadius(9)
 
-      Text(this.countText(count))
-        .fontSize(19)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(count < 0 ? $r('app.color.text_tertiary') : $r('app.color.text_primary'))
+      // 数字槽：已加载显示真实数字；需选专家且未选显示「—」；其余（加载中/失败）显示加载圈，不显示横杠
+      Column() {
+        if ($$.count >= 0) {
+          Text(`${$$.count}`)
+            .fontSize(19)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_primary'))
+        } else if ($$.needsAgent && this.agentId === '') {
+          Text('—')
+            .fontSize(19)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_tertiary'))
+        } else {
+          LoadingProgress()
+            .width(18)
+            .height(18)
+            .color($r('app.color.text_tertiary'))
+        }
+      }
+      .constraintSize({ minHeight: 26 })
+      .justifyContent(FlexAlign.Center)
 
-      Text(label)
+      Text($$.label)
         .fontSize(11)
         .fontColor($r('app.color.text_tertiary'))
     }
@@ -260,24 +272,37 @@ export struct WorkspaceTab {
     .borderRadius(15)
     .backgroundColor($r('app.color.card_glass'))
     .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
+    .systemMaterial(UiMaterialKit.card())
     .border({ width: 1, color: $r('app.color.card_stroke') })
     .alignItems(HorizontalAlign.Center)
     .onClick((): void => {
-      this.openRoute(route, needsAgent);
+      this.openRoute($$.route, $$.needsAgent);
     })
   }
 
   @Builder
   statsBuilder() {
     Row({ space: 10 }) {
-      this.statCard($r('sys.symbol.clock'), this.cronCount, '定时任务',
-        $r('app.color.brand'), $r('app.color.brand_light'), 'cron', true)
-      this.statCard($r('sys.symbol.book'), this.kbCount, '知识库',
-        $r('app.color.success'), $r('app.color.success_soft'), 'knowledge', false)
-      this.statCard($r('sys.symbol.link'), this.connectorCount, '连接器',
-        $r('app.color.warning'), $r('app.color.warning_soft'), 'connectors', false)
-      this.statCard($r('sys.symbol.puzzle'), this.pluginCount, '插件',
-        $r('app.color.brand'), $r('app.color.brand_light'), 'plugins', true)
+      this.statCard({
+        icon: $r('sys.symbol.clock'), count: this.cronCount, label: '定时任务',
+        color: $r('app.color.brand'), softColor: $r('app.color.brand_light'),
+        route: 'cron', needsAgent: true
+      })
+      this.statCard({
+        icon: $r('sys.symbol.book'), count: this.kbCount, label: '知识库',
+        color: $r('app.color.success'), softColor: $r('app.color.success_soft'),
+        route: 'knowledge', needsAgent: false
+      })
+      this.statCard({
+        icon: $r('sys.symbol.link'), count: this.connectorCount, label: '连接器',
+        color: $r('app.color.warning'), softColor: $r('app.color.warning_soft'),
+        route: 'connectors', needsAgent: false
+      })
+      this.statCard({
+        icon: $r('sys.symbol.puzzle'), count: this.pluginCount, label: '插件',
+        color: $r('app.color.brand'), softColor: $r('app.color.brand_light'),
+        route: 'plugins', needsAgent: true
+      })
     }
     .width('100%')
   }
@@ -357,6 +382,7 @@ export struct WorkspaceTab {
     .borderRadius(16)
     .backgroundColor($r('app.color.card_glass'))
     .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
+    .systemMaterial(UiMaterialKit.card())
     .border({ width: 1, color: $r('app.color.card_stroke') })
     .shadow({ radius: 10, color: '#0A000000', offsetY: 3 })
   }
@@ -365,9 +391,15 @@ export struct WorkspaceTab {
     HdsNavigation() {
       Refresh({ refreshing: $$this.refreshing }) {
         List({ scroller: this.scroller }) {
+          // 头部占位项：静止时避开标题栏区域（contentStartOffset 滚动回顶后会失效，真机实测）。
+          // 高度 = 状态栏避让（topInset）+ MINI 标题行 56vp + 8vp 间隙；固定 60vp 时 hero 卡与
+          // 标题文字重叠（实测 bounds：卡顶 245px < 标题底 287px），随设备避让区自适应
+          ListItem()
+            .height(this.topInset + 64)
+            .width('100%')
+            .hitTestBehavior(HitTestMode.None)
           ListItem() {
           Column({ space: 14 }) {
-            this.heroBuilder()
             this.statsBuilder()
 
             Column({ space: 22 }) {
@@ -388,7 +420,8 @@ export struct WorkspaceTab {
           }
         }
         .width('100%')
-        .contentStartOffset(this.topInset + 96)
+        .clip(false)
+        .cachedCount(3, true)
         .scrollBar(BarState.Off)
       }
       .width('100%')
@@ -396,17 +429,21 @@ export struct WorkspaceTab {
       .onRefreshing((): void => {
         this.refreshAll();
       })
+      // 内容延伸进状态栏区（与聊天页一致）：滚动正文从标题栏/状态栏下穿过，由 GRADUAL_BLUR 提供光感
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .titleBar({
+      avoidLayoutSafeArea: true,
       style: {
         scrollEffectOpts: {
           enableScrollEffect: this.immersiveOn,
-          scrollEffectType: ScrollEffectType.GRADUAL_BLUR,
+          scrollEffectType: ScrollEffectType.IMMERSIVE_GRADIENT_BLUR,
+          enableRefreshOffsetChange: false,
           blurEffectiveStartOffset: LengthMetrics.vp(0),
           blurEffectiveEndOffset: LengthMetrics.vp(20)
         },
         systemMaterialEffect: {
-          materialType: hdsMaterial.MaterialType.NONE,
+          materialType: this.immersiveOn ? hdsMaterial.MaterialType.IMMERSIVE : hdsMaterial.MaterialType.NONE,
           materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
         },
         originalStyle: {
@@ -438,12 +475,11 @@ export struct WorkspaceTab {
         title: { mainTitle: $r('app.string.workspace_title') }
       }
     })
-    .titleMode(HdsNavigationTitleMode.FREE)
+    .titleMode(HdsNavigationTitleMode.MINI)
     .hideBackButton(true)
     .bindToScrollable([this.scroller])
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))
-    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
   }
 }

@@ -8,6 +8,7 @@ import { CronCreateDialog } from '../../components/CronCreateDialog';
 import { TimeFormat } from '../../utils/TimeFormat';
 import { PageHeader } from '../../components/PageHeader';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
+import { MenuSheetContent, MenuSheetOption } from '../../components/MenuSheet';
 
 /** 定时任务管理（当前专家） */
 @Component
@@ -17,6 +18,11 @@ export struct CronPage {
   @State refreshing: boolean = false;
   @State errorMsg: string = '';
   @State operating: boolean = false;
+  @State menuOpen: boolean = false;
+  @State menuTitle: string = '';
+  @State menuMessage: string = '';
+  @State menuOptions: Array<MenuSheetOption> = [];
+  private menuActions: Array<() => void> = [];
   private agentId: string = '';
   private pathStack: NavPathStack | null = null;
   private createController: CustomDialogController | null = null;
@@ -79,24 +85,31 @@ export struct CronPage {
   }
 
   private showJobMenu(job: CronJobModel): void {
-    this.getUIContext().showActionSheet({
-      title: job.name === '' ? job.triggerDisplay() : job.name,
-      message: '选择操作',
-      sheets: [
-        {
-          title: '编辑',
-          action: (): void => {
-            this.showEdit(job);
-          }
-        },
-        {
-          title: '删除',
-          action: (): void => {
-            this.confirmDelete(job);
-          }
-        }
-      ]
-    });
+    this.menuTitle = job.name === '' ? job.triggerDisplay() : job.name;
+    this.menuMessage = '选择操作';
+    this.menuOptions = [
+      new MenuSheetOption($r('sys.symbol.pencil_line'), '编辑', '修改名称、触发周期与提示词', false),
+      new MenuSheetOption($r('sys.symbol.trash'), '删除', '', true)
+    ];
+    this.menuActions = [
+      (): void => {
+        this.showEdit(job);
+      },
+      (): void => {
+        this.confirmDelete(job);
+      }
+    ];
+    this.menuOpen = true;
+  }
+
+  /** 菜单选中：先关半模态再执行预置动作（越界保护） */
+  private onMenuSelect(index: number): void {
+    this.menuOpen = false;
+    if (index < 0 || index >= this.menuActions.length) {
+      return;
+    }
+    const action: () => void = this.menuActions[index];
+    action();
   }
 
   private async toggle(job: CronJobModel, on: boolean): Promise<void> {
@@ -363,6 +376,23 @@ export struct CronPage {
     .backgroundColor($r('app.color.bg_page'))
     .onReady((ctx: NavDestinationContext): void => {
       this.onNavReady(ctx);
+    })
+    .bindSheet($$this.menuOpen, this.menuSheetBuilder, {
+      detents: [SheetSize.FIT_CONTENT],
+      showClose: true,
+      systemMaterial: UiMaterialKit.sheet()
+    })
+  }
+
+  @Builder
+  menuSheetBuilder() {
+    MenuSheetContent({
+      title: this.menuTitle,
+      message: this.menuMessage,
+      options: this.menuOptions,
+      onSelect: (index: number): void => {
+        this.onMenuSelect(index);
+      }
     })
   }
 }

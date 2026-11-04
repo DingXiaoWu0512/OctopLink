@@ -5,6 +5,7 @@ import { EmptyView } from '../../components/EmptyView';
 import { ErrorRetry } from '../../components/ErrorRetry';
 import { PageHeader } from '../../components/PageHeader';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
+import { MenuSheetContent, MenuSheetOption } from '../../components/MenuSheet';
 
 /** 用户管理：用户列表/创建/编辑/启停/解锁/重置密码/批量操作 + 角色模板管理（需 users 权限） */
 @Component
@@ -43,6 +44,12 @@ export struct UsersPage {
   // 批量数值输入（set_token_quota / set_max_agents）
   @State batchAction: string = '';
   @State batchText: string = '';
+  // 菜单半模态
+  @State menuOpen: boolean = false;
+  @State menuTitle: string = '';
+  @State menuMessage: string = '';
+  @State menuOptions: Array<MenuSheetOption> = [];
+  private menuActions: Array<() => void> = [];
 
   private onNavReady(ctx: NavDestinationContext): void {
     this.load();
@@ -259,36 +266,40 @@ export struct UsersPage {
     if (this.selectionMode) {
       return;
     }
-    this.getUIContext().showActionSheet({
-      title: user.displayName,
-      message: `@${user.username}`,
-      sheets: [
-        {
-          title: '编辑资料',
-          action: (): void => {
-            this.openEdit(user);
-          }
-        },
-        {
-          title: user.disabled ? '启用账号' : '停用账号',
-          action: (): void => {
-            this.toggleDisabled(user);
-          }
-        },
-        {
-          title: '重置密码',
-          action: (): void => {
-            this.openReset(user);
-          }
-        },
-        {
-          title: '删除用户',
-          action: (): void => {
-            this.confirmDeleteUser(user);
-          }
-        }
-      ]
-    });
+    this.menuTitle = user.displayName;
+    this.menuMessage = `@${user.username}`;
+    this.menuOptions = [
+      new MenuSheetOption($r('sys.symbol.person'), '编辑资料', '修改昵称、角色与配额', false),
+      new MenuSheetOption(user.disabled ? $r('sys.symbol.checkmark_circle') : $r('sys.symbol.xmark_circle'),
+        user.disabled ? '启用账号' : '停用账号', '', false),
+      new MenuSheetOption($r('sys.symbol.key'), '重置密码', '', false),
+      new MenuSheetOption($r('sys.symbol.trash'), '删除用户', '', true)
+    ];
+    this.menuActions = [
+      (): void => {
+        this.openEdit(user);
+      },
+      (): void => {
+        this.toggleDisabled(user);
+      },
+      (): void => {
+        this.openReset(user);
+      },
+      (): void => {
+        this.confirmDeleteUser(user);
+      }
+    ];
+    this.menuOpen = true;
+  }
+
+  /** 菜单选中：先关半模态再执行预置动作（越界保护） */
+  private onMenuSelect(index: number): void {
+    this.menuOpen = false;
+    if (index < 0 || index >= this.menuActions.length) {
+      return;
+    }
+    const action: () => void = this.menuActions[index];
+    action();
   }
 
   private async toggleDisabled(user: UserAccountModel): Promise<void> {
@@ -348,48 +359,39 @@ export struct UsersPage {
       this.getUIContext().getPromptAction().showToast({ message: '请先选择用户' });
       return;
     }
-    this.getUIContext().showActionSheet({
-      title: `已选 ${this.selectedIds.length} 位用户`,
-      message: '选择批量操作',
-      sheets: [
-        {
-          title: '启用',
-          action: (): void => {
-            this.runBatch('enable');
-          }
-        },
-        {
-          title: '停用',
-          action: (): void => {
-            this.runBatch('disable');
-          }
-        },
-        {
-          title: '设置 Token 配额',
-          action: (): void => {
-            this.batchAction = 'set_token_quota';
-            this.batchText = '';
-            this.sheetMode = 'batch';
-            this.sheetOpen = true;
-          }
-        },
-        {
-          title: '设置最大专家数',
-          action: (): void => {
-            this.batchAction = 'set_max_agents';
-            this.batchText = '';
-            this.sheetMode = 'batch';
-            this.sheetOpen = true;
-          }
-        },
-        {
-          title: '删除',
-          action: (): void => {
-            this.confirmBatchDelete();
-          }
-        }
-      ]
-    });
+    this.menuTitle = `已选 ${this.selectedIds.length} 位用户`;
+    this.menuMessage = '选择批量操作';
+    this.menuOptions = [
+      new MenuSheetOption($r('sys.symbol.checkmark_circle'), '启用', '', false),
+      new MenuSheetOption($r('sys.symbol.xmark_circle'), '停用', '', false),
+      new MenuSheetOption($r('sys.symbol.slider_horizontal_2'), '设置 Token 配额', '留空为不限', false),
+      new MenuSheetOption($r('sys.symbol.robot'), '设置最大专家数', '留空为不限', false),
+      new MenuSheetOption($r('sys.symbol.trash'), '删除', '', true)
+    ];
+    this.menuActions = [
+      (): void => {
+        this.runBatch('enable');
+      },
+      (): void => {
+        this.runBatch('disable');
+      },
+      (): void => {
+        this.batchAction = 'set_token_quota';
+        this.batchText = '';
+        this.sheetMode = 'batch';
+        this.sheetOpen = true;
+      },
+      (): void => {
+        this.batchAction = 'set_max_agents';
+        this.batchText = '';
+        this.sheetMode = 'batch';
+        this.sheetOpen = true;
+      },
+      (): void => {
+        this.confirmBatchDelete();
+      }
+    ];
+    this.menuOpen = true;
   }
 
   private confirmBatchDelete(): void {
@@ -463,24 +465,21 @@ export struct UsersPage {
   }
 
   private showRoleMenu(role: UserRoleModel): void {
-    this.getUIContext().showActionSheet({
-      title: role.name,
-      message: role.id,
-      sheets: [
-        {
-          title: '编辑角色',
-          action: (): void => {
-            this.openRoleEdit(role);
-          }
-        },
-        {
-          title: '删除角色',
-          action: (): void => {
-            this.confirmDeleteRole(role);
-          }
-        }
-      ]
-    });
+    this.menuTitle = role.name;
+    this.menuMessage = role.id;
+    this.menuOptions = [
+      new MenuSheetOption($r('sys.symbol.square_and_pencil'), '编辑角色', '修改名称与描述', false),
+      new MenuSheetOption($r('sys.symbol.trash'), '删除角色', '', true)
+    ];
+    this.menuActions = [
+      (): void => {
+        this.openRoleEdit(role);
+      },
+      (): void => {
+        this.confirmDeleteRole(role);
+      }
+    ];
+    this.menuOpen = true;
   }
 
   private async submitRole(): Promise<void> {
@@ -899,6 +898,23 @@ export struct UsersPage {
     .onReady((ctx: NavDestinationContext): void => {
       this.onNavReady(ctx);
     })
+    .bindSheet($$this.menuOpen, this.menuSheetBuilder, {
+      detents: [SheetSize.FIT_CONTENT],
+      showClose: true,
+      systemMaterial: UiMaterialKit.sheet()
+    })
+  }
+
+  @Builder
+  menuSheetBuilder() {
+    MenuSheetContent({
+      title: this.menuTitle,
+      message: this.menuMessage,
+      options: this.menuOptions,
+      onSelect: (index: number): void => {
+        this.onMenuSelect(index);
+      }
+    })
   }
 
   /** 单 bindSheet 分发：create / edit / reset / role / batch */
@@ -965,6 +981,7 @@ export struct UsersPage {
           .borderRadius(12)
           .width('100%')
           .systemMaterial(UiMaterialKit.button())
+          .menuSystemMaterial(UiMaterialKit.sheet())
           .onSelect((index: number, value: string): void => {
             if (index >= 0 && index < this.roles.length) {
               this.cuRole = this.roles[index].id;

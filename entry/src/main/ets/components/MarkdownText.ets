@@ -1,3 +1,5 @@
+import { ChatMessageModel } from '../model/MessageModels';
+
 class MdBlock {
   isCode: boolean;
   content: string;
@@ -14,13 +16,16 @@ class MdBlock {
  */
 @Component
 export struct MarkdownText {
-  text: string = '';
+  // 流式增量：@ObjectLink 直接订阅 @Observed 消息模型，text 变化即重渲。
+  // 不可用 @Prop 绑定 msg.text：@ObjectLink 嵌套字段无法建立单向订阅，
+  // 父级重渲染时 updateStateVars 会把值 reset 成 undefined 导致崩溃。
+  @ObjectLink msg: ChatMessageModel;
   fontSize: number = 16;
   color: ResourceColor = '#182431';
 
   private splitBlocks(): Array<MdBlock> {
     const blocks: Array<MdBlock> = [];
-    const parts: Array<string> = this.text.split('```');
+    const parts: Array<string> = this.msg.text.split('```');
     for (let i = 0; i < parts.length; i++) {
       let content: string = parts[i];
       if (content === '') {
@@ -66,7 +71,8 @@ export struct MarkdownText {
             .fontColor(this.color)
             .lineHeight(this.fontSize * 1.5)
         }
-      }, (block: MdBlock, index: number) => `${index}`)
+        // key 编码内容长度：流式增长时 key 变化强制重建节点，避免同 key 不刷新
+      }, (block: MdBlock, index: number) => `${index}_${block.content.length}`)
     }
     .alignItems(HorizontalAlign.Start)
   }

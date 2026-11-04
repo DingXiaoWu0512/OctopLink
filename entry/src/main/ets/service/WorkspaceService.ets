@@ -113,6 +113,25 @@ export class CronService {
   static async runNow(agentId: string, cronId: string): Promise<void> {
     await HttpClient.getInstance().post(`/api/agents/${agentId}/cron/${cronId}/run-now`, '{}');
   }
+
+  /** 定时服务全局设置（GET /api/cron/settings → {key: string}） */
+  static async settings(): Promise<Record<string, string>> {
+    const text: string = await HttpClient.getInstance().get('/api/cron/settings');
+    const result: Record<string, string> = {};
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return result;
+    }
+    for (const key of Object.keys(rec)) {
+      const v: Object = rec[key];
+      if (typeof v === 'string') {
+        result[key] = v as string;
+      } else if (typeof v === 'number') {
+        result[key] = `${v}`;
+      }
+    }
+    return result;
+  }
 }
 
 /** 知识库（/api/knowledge-bases） */
@@ -145,10 +164,73 @@ export class KnowledgeService {
     await HttpClient.getInstance().delete(`/api/knowledge-bases/${kbId}`);
   }
 
-  /** 服务能力与限制（任意登录用户） */
+  /** 服务能力与限制（任意登录用户；含 embedding 后端/OCR/chunk 参数） */
   static async capability(): Promise<KnowledgeCapability> {
     const text: string = await HttpClient.getInstance().get('/api/knowledge-bases/capability');
     return KnowledgeCapability.parse(text);
+  }
+
+  /** 总开关与后端选择（需 knowledge_settings 权限；backend: onnx|remote） */
+  static async putFeature(enabled: boolean, backend: string = '', model: string = '',
+    providerId: string = ''): Promise<KnowledgeCapability> {
+    const body: Record<string, Object> = { 'enabled': enabled };
+    if (backend !== '') {
+      body['backend'] = backend;
+    }
+    if (model !== '') {
+      body['model'] = model;
+    }
+    if (providerId !== '') {
+      body['provider_id'] = providerId;
+    }
+    const text: string = await HttpClient.getInstance().put(
+      '/api/knowledge-bases/feature', JSON.stringify(body));
+    return KnowledgeCapability.parse(text);
+  }
+
+  /** 当前用户默认展开的知识库 id 列表 */
+  static async defaultOpenIds(): Promise<Array<string>> {
+    const text: string = await HttpClient.getInstance().get('/api/knowledge-bases/default-open');
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return [];
+    }
+    const ids: Array<string> = JsonHelper.getStringArray(rec, 'knowledge_base_ids');
+    if (ids.length > 0) {
+      return ids;
+    }
+    return JsonHelper.getStringArray(rec, 'ids');
+  }
+
+  /** OCR 后端选项（需 knowledge_settings 权限） */
+  static async ocrOptions(): Promise<string> {
+    return await HttpClient.getInstance().get('/api/knowledge-bases/ocr-options');
+  }
+
+  /** 启动 ONNX 嵌入模型下载（需 knowledge_settings 权限） */
+  static async onnxDownload(model: string): Promise<string> {
+    const body: Record<string, Object> = { 'model': model };
+    return await HttpClient.getInstance().post(
+      '/api/knowledge-bases/onnx-download', JSON.stringify(body));
+  }
+
+  /** 轮询 ONNX 模型下载进度 */
+  static async onnxDownloadStatus(): Promise<string> {
+    return await HttpClient.getInstance().get('/api/knowledge-bases/onnx-download-status');
+  }
+
+  /** 激活已下载的 ONNX 模型为本地嵌入服务 */
+  static async onnxActivate(model: string): Promise<string> {
+    const body: Record<string, Object> = { 'model': model };
+    return await HttpClient.getInstance().post(
+      '/api/knowledge-bases/onnx-activate', JSON.stringify(body));
+  }
+
+  /** 探测本地 ONNX 模型可用性 */
+  static async onnxTest(model: string): Promise<string> {
+    const body: Record<string, Object> = { 'model': model };
+    return await HttpClient.getInstance().post(
+      '/api/knowledge-bases/onnx-test', JSON.stringify(body));
   }
 
   static async listDocs(kbId: string): Promise<Array<KnowledgeDocModel>> {
@@ -240,6 +322,39 @@ export class KnowledgeService {
       content = `${content.substring(0, 5000)}\n\n...（内容过长，已截断）`;
     }
     return new DocPreview(filename, content);
+  }
+
+  /** KB 头像地址（Image 直连，access_token 查询参数鉴权） */
+  static avatarUrl(kbId: string): string {
+    const base: string = HttpClient.getInstance().getBaseUrl();
+    const token: string = HttpClient.getInstance().getToken();
+    return `${base}/api/knowledge-bases/${kbId}/avatar?access_token=${encodeURIComponent(token)}`;
+  }
+
+  /** 带版本号：上传/删除后自增 rev 穿透 Image 缓存 */
+  static avatarUrlWithRev(kbId: string, rev: number): string {
+    if (rev <= 0) {
+      return KnowledgeService.avatarUrl(kbId);
+    }
+    return `${KnowledgeService.avatarUrl(kbId)}&v=${rev}`;
+  }
+
+  /** 上传 KB 头像（multipart 字段 file，201） */
+  static async uploadAvatar(kbId: string, fileName: string, contentType: string,
+    data: ArrayBuffer): Promise<void> {
+    await HttpClient.getInstance().postMultipartFile(
+      `/api/knowledge-bases/${kbId}/avatar`, 'file', fileName, contentType, data);
+  }
+
+  /** 删除 KB 头像 */
+  static async deleteAvatar(kbId: string): Promise<void> {
+    await HttpClient.getInstance().delete(`/api/knowledge-bases/${kbId}/avatar`);
+  }
+
+  /** 嵌入后端选项（GET /api/knowledge-bases/embedding-options；all_onnx 返回完整本地目录） */
+  static async embeddingOptions(allOnnx: boolean): Promise<string> {
+    const suffix: string = allOnnx ? '?all_onnx=true' : '';
+    return await HttpClient.getInstance().get(`/api/knowledge-bases/embedding-options${suffix}`);
   }
 }
 
@@ -493,6 +608,207 @@ export class ConnectorService {
   static async remove(instanceId: string): Promise<void> {
     await HttpClient.getInstance().delete(`/api/connector-instances/${instanceId}`);
   }
+
+  // ---- CLI 授权（Agently/钉钉 CLI 设备码登录）----
+
+  /** 发起/刷新/登出 CLI 授权：action = start|refresh|logout */
+  static async agentlyAuth(instanceId: string, action: string): Promise<AgentlyAuthState> {
+    const text: string = await HttpClient.getInstance().post(
+      `/api/connector-instances/${instanceId}/agently-auth/${action}`, '{}');
+    return AgentlyAuthState.parse(text);
+  }
+
+  /** 轮询 CLI 授权状态（authorized 时服务端会恢复邮件监听） */
+  static async agentlyAuthStatus(instanceId: string): Promise<AgentlyAuthState> {
+    const text: string = await HttpClient.getInstance().get(
+      `/api/connector-instances/${instanceId}/agently-auth/status`);
+    return AgentlyAuthState.parse(text);
+  }
+
+  // ---- 飞书 CLI 用户设备码登录 ----
+
+  /** 全局发起（需 app_id/app_secret）→ {device_code, verification_url, expires_in, user_code, hint} */
+  static async feishuUserAuthStart(appId: string, appSecret: string): Promise<string> {
+    const body: Record<string, Object> = {
+      'app_id': appId,
+      'app_secret': appSecret
+    };
+    return await HttpClient.getInstance().post(
+      '/api/connectors/feishu-cli/user-auth/start', JSON.stringify(body));
+  }
+
+  /** 全局完成（device_code 换取用户身份） */
+  static async feishuUserAuthComplete(appId: string, appSecret: string,
+    deviceCode: string): Promise<string> {
+    const body: Record<string, Object> = {
+      'app_id': appId,
+      'app_secret': appSecret,
+      'device_code': deviceCode
+    };
+    return await HttpClient.getInstance().post(
+      '/api/connectors/feishu-cli/user-auth/complete', JSON.stringify(body));
+  }
+
+  /** 实例级发起（App Secret 读自已存实例） */
+  static async feishuUserAuthStartForInstance(instanceId: string): Promise<string> {
+    return await HttpClient.getInstance().post(
+      `/api/connector-instances/${instanceId}/feishu-user-auth/start`, '{}');
+  }
+
+  /** 实例级完成（device_code 换取用户身份并热重载连接器） */
+  static async feishuUserAuthCompleteForInstance(instanceId: string,
+    deviceCode: string): Promise<string> {
+    const body: Record<string, Object> = { 'device_code': deviceCode };
+    return await HttpClient.getInstance().post(
+      `/api/connector-instances/${instanceId}/feishu-user-auth/complete`, JSON.stringify(body));
+  }
+
+  // ---- CLI 安装状态（宿主机）----
+
+  /** CLI 安装状态：{kind, binary, npm_package, install_command, doc_url, guide_url, installed, binary_path, version} */
+  static async cliStatus(kind: string): Promise<CliInstallStatus> {
+    const text: string =
+      await HttpClient.getInstance().get(`/api/connectors/${kind}/cli-status`);
+    return CliInstallStatus.parse(text);
+  }
+
+  /** 安装 CLI（需 connectors 权限，npm install -g） */
+  static async installCli(kind: string): Promise<CliInstallStatus> {
+    const text: string =
+      await HttpClient.getInstance().post(`/api/connectors/${kind}/install-cli`, '{}');
+    return CliInstallStatus.parse(text);
+  }
+
+  // ---- OAuth 辅助 ----
+
+  /** 连接器鉴权信息：{authorize_url, login_url, guide_url, manual_url, auth_hint} */
+  static async authInfo(kind: string): Promise<string> {
+    return await HttpClient.getInstance().get(`/api/connectors/auth/${kind}/info`);
+  }
+
+  /** 全量保存自定义 MCP 服务器配置 */
+  static async customMcpPut(bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().put('/api/connectors/custom-mcp', bodyStr);
+  }
+
+  /** 探测自定义 MCP 服务器连通性 */
+  static async customMcpTest(bodyStr: string): Promise<string> {
+    return await HttpClient.getInstance().post('/api/connectors/custom-mcp/test', bodyStr);
+  }
+
+  // ---- 网页 OAuth 授权（authorize-url → 系统浏览器/内嵌 Web → exchange-code）----
+
+  /** 获取 OAuth 授权跳转地址（GET /api/connectors/auth/{kind}/authorize-url） */
+  static async oauthAuthorizeUrl(kind: string): Promise<string> {
+    const text: string =
+      await HttpClient.getInstance().get(`/api/connectors/auth/${kind}/authorize-url`);
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return '';
+    }
+    let url: string = JsonHelper.getString(rec, 'authorize_url', '');
+    if (url === '') {
+      url = JsonHelper.getString(rec, 'url', '');
+    }
+    if (url === '') {
+      url = JsonHelper.getString(rec, 'login_url', '');
+    }
+    return url;
+  }
+
+  /** 用回跳 code 完成授权（POST /api/connectors/auth/{kind}/exchange-code） */
+  static async oauthExchangeCode(kind: string, code: string, bkn: string,
+    knowledgeBaseId: string): Promise<string> {
+    const body: Record<string, Object> = { 'code': code };
+    if (bkn !== '') {
+      body['bkn'] = bkn;
+    }
+    if (knowledgeBaseId !== '') {
+      body['knowledge_base_id'] = knowledgeBaseId;
+    }
+    return await HttpClient.getInstance().post(
+      `/api/connectors/auth/${kind}/exchange-code`, JSON.stringify(body));
+  }
+}
+
+/** CLI 授权状态（AgentlyAuthResponse） */
+export class AgentlyAuthState {
+  readonly status: string; // idle|pending|authorized|expired|error
+  readonly verificationUrl: string;
+  readonly userCode: string;
+  readonly expiresAtSec: number;
+  readonly error: string;
+
+  constructor(status: string, verificationUrl: string, userCode: string, expiresAtSec: number,
+    error: string) {
+    this.status = status;
+    this.verificationUrl = verificationUrl;
+    this.userCode = userCode;
+    this.expiresAtSec = expiresAtSec;
+    this.error = error;
+  }
+
+  static parse(text: string): AgentlyAuthState {
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return new AgentlyAuthState('idle', '', '', 0, '');
+    }
+    return new AgentlyAuthState(
+      JsonHelper.getString(rec, 'status', 'idle'),
+      JsonHelper.getString(rec, 'verification_url', ''),
+      JsonHelper.getString(rec, 'user_code', ''),
+      JsonHelper.getNumber(rec, 'expires_at', 0),
+      JsonHelper.getString(rec, 'error', '')
+    );
+  }
+}
+
+/** 宿主 CLI 安装状态 */
+export class CliInstallStatus {
+  readonly kind: string;
+  readonly binary: string;
+  readonly npmPackage: string;
+  readonly installCommand: string;
+  readonly docUrl: string;
+  readonly guideUrl: string;
+  readonly installed: boolean;
+  readonly binaryPath: string;
+  readonly version: string;
+  readonly error: string;
+
+  constructor(kind: string, binary: string, npmPackage: string, installCommand: string,
+    docUrl: string, guideUrl: string, installed: boolean, binaryPath: string, version: string,
+    error: string) {
+    this.kind = kind;
+    this.binary = binary;
+    this.npmPackage = npmPackage;
+    this.installCommand = installCommand;
+    this.docUrl = docUrl;
+    this.guideUrl = guideUrl;
+    this.installed = installed;
+    this.binaryPath = binaryPath;
+    this.version = version;
+    this.error = error;
+  }
+
+  static parse(text: string): CliInstallStatus {
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return new CliInstallStatus('', '', '', '', '', '', false, '', '', '');
+    }
+    return new CliInstallStatus(
+      JsonHelper.getString(rec, 'kind', ''),
+      JsonHelper.getString(rec, 'binary', ''),
+      JsonHelper.getString(rec, 'npm_package', ''),
+      JsonHelper.getString(rec, 'install_command', ''),
+      JsonHelper.getString(rec, 'doc_url', ''),
+      JsonHelper.getString(rec, 'guide_url', ''),
+      JsonHelper.getBool(rec, 'installed', false),
+      JsonHelper.getString(rec, 'binary_path', ''),
+      JsonHelper.getString(rec, 'version', ''),
+      JsonHelper.getString(rec, 'error', '')
+    );
+  }
 }
 
 /** OAuth 发起结果 */
@@ -599,6 +915,14 @@ export class GlobalPluginService {
   static async installUrl(url: string): Promise<void> {
     const body: Record<string, Object> = { 'url': url };
     await HttpClient.getInstance().post('/api/plugins/install', JSON.stringify(body));
+  }
+
+  /** 上传本地 ZIP 安装插件（multipart file + force；需 plugins 权限） */
+  static async uploadZip(fileName: string, data: ArrayBuffer,
+    force: boolean = false): Promise<void> {
+    const formFields: Record<string, string> = { 'force': force ? 'true' : 'false' };
+    await HttpClient.getInstance().postMultipartFile(
+      '/api/plugins/upload', 'file', fileName, 'application/zip', data, formFields);
   }
 
   /** 市场目录 */

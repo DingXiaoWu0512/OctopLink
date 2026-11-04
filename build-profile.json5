@@ -5,13 +5,13 @@
         "name": "default",
         "type": "HarmonyOS",
         "material": {
-          "certpath": "C:\\Users\\13775\\.ohos\\config\\default_OctopLink_u96It1ue7NAuPR-88Wwr_ANE8HTm2u58rOVH_OhZ7x0=.cer",
-          "keyAlias": "debugKey",
-          "keyPassword": "0000001A446EA825C0370CBF60401C003EA784B41844D864E7B9FF4D8679EE6AD46E0B0452FCA4627E66",
-          "profile": "C:\\Users\\13775\\.ohos\\config\\default_OctopLink_u96It1ue7NAuPR-88Wwr_ANE8HTm2u58rOVH_OhZ7x0=.p7b",
+          "storeFile": "C:/Users/13775/证书/OctopLink.p12",
+          "storePassword": "000000192B0E37D50B43057273E768441963756988484E7F701B841DDB71C241705E710CBB13D47227",
+          "keyAlias": "octoplink",
+          "keyPassword": "0000001906CB24A7CE996D73509969364E27501C3DF06F25838C2BFE93E5DF7C5FA0A313C26CCDB436",
           "signAlg": "SHA256withECDSA",
-          "storeFile": "C:\\Users\\13775\\.ohos\\config\\default_OctopLink_u96It1ue7NAuPR-88Wwr_ANE8HTm2u58rOVH_OhZ7x0=.p12",
-          "storePassword": "0000001A9CDC4B0B816133DF6E31D8DCE1E7FB39F885F8322811BA527912BD2B615D5AE75027E4EA47EF"
+          "profile": "C:/Users/13775/证书/OctopLinkRelease.p7b",
+          "certpath": "C:/Users/13775/证书/OctopLink.cer"
         }
       }
     ],

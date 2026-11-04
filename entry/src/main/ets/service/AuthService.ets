@@ -1,5 +1,13 @@
 import { HttpClient } from '../net/HttpClient';
-import { LoginResultModel, OctopUserModel, UserAccountModel, UserRoleModel } from '../model/AuthModels';
+import {
+  CaptchaConfigModel,
+  HealthStatusModel,
+  LoginResultModel,
+  OctopUserModel,
+  UserAccountModel,
+  UserGroupModel,
+  UserRoleModel
+} from '../model/AuthModels';
 import { JsonHelper } from '../utils/JsonHelper';
 import { OctopApiError } from '../net/HttpClient';
 import { UrlUtil } from '../utils/UrlUtil';
@@ -21,6 +29,18 @@ export class AuthService {
     }
     const text: string = await client.post('/api/auth/login', JSON.stringify(body));
     return LoginResultModel.fromResponse(text);
+  }
+
+  /** 公开登录验证码配置（无需登录；slider provider 无需前端挑战） */
+  static async captchaConfig(): Promise<CaptchaConfigModel> {
+    const text: string = await HttpClient.getInstance().get('/api/auth/captcha');
+    return CaptchaConfigModel.parse(text);
+  }
+
+  /** 服务器健康检查（免鉴权；连通性/数据库/运行中智能体数） */
+  static async health(): Promise<HealthStatusModel> {
+    const text: string = await HttpClient.getInstance().get('/api/health');
+    return HealthStatusModel.parse(text);
   }
 
   /** 修改密码（204；旧密码错误等服务端以错误包络返回） */
@@ -54,6 +74,32 @@ export class AuthService {
       JsonHelper.getStringArray(source, 'permissions')
     );
   }
+
+  /** 编辑个人资料（PATCH /api/auth/me；null 语义字段传空串表示不修改，displayName/locale 至少其一） */
+  static async updateMe(displayName: string, locale: string): Promise<void> {
+    const body: Record<string, Object> = {};
+    if (displayName !== '') {
+      body['display_name'] = displayName;
+    }
+    if (locale !== '') {
+      body['locale'] = locale;
+    }
+    await HttpClient.getInstance().patch('/api/auth/me', JSON.stringify(body));
+  }
+
+  /** 上传我的头像（multipart file，≤5MiB，201 → {avatar_url}） */
+  static async uploadMyAvatar(fileName: string, contentType: string,
+    data: ArrayBuffer): Promise<string> {
+    const text: string = await HttpClient.getInstance().postMultipartFile(
+      '/api/auth/me/avatar', 'file', fileName, contentType, data);
+    const rec = JsonHelper.parse(text);
+    return rec === null ? '' : JsonHelper.getString(rec, 'avatar_url', '');
+  }
+
+  /** 删除我的头像 */
+  static async deleteMyAvatar(): Promise<void> {
+    await HttpClient.getInstance().delete('/api/auth/me/avatar');
+  }
 }
 
 /** 用户管理（/api/users，需 users 权限） */
@@ -84,6 +130,20 @@ export class UserService {
     await HttpClient.getInstance().post(`/api/users/${userId}/reset-password`, JSON.stringify(body));
   }
 
+  /** 上传用户头像（multipart file，≤5MiB，201 → {avatar_url}） */
+  static async uploadAvatar(userId: number, fileName: string, contentType: string,
+    data: ArrayBuffer): Promise<string> {
+    const text: string = await HttpClient.getInstance().postMultipartFile(
+      `/api/users/${userId}/avatar`, 'file', fileName, contentType, data);
+    const rec = JsonHelper.parse(text);
+    return rec === null ? '' : JsonHelper.getString(rec, 'avatar_url', '');
+  }
+
+  /** 删除用户头像 */
+  static async deleteAvatar(userId: number): Promise<void> {
+    await HttpClient.getInstance().delete(`/api/users/${userId}/avatar`);
+  }
+
   /** 批量操作：action = enable|disable|delete|set_token_quota|set_max_agents */
   static async batch(userIds: Array<number>, action: string,
     tokenQuota: number | null = null, maxAgents: number | null = null): Promise<void> {
@@ -102,6 +162,17 @@ export class UserService {
       body['max_agents'] = maxAgents;
     }
     await HttpClient.getInstance().post('/api/users/batch', JSON.stringify(body));
+  }
+  /** 可分配权限目录（GET /api/users/permissions，数组原始文本交 UI 解析） */
+  static async permissionCatalog(): Promise<string> {
+    return await HttpClient.getInstance().get('/api/users/permissions');
+  }
+
+  /** 单个用户详情（GET /api/users/{id}） */
+  static async getUser(userId: number): Promise<UserAccountModel> {
+    const text: string = await HttpClient.getInstance().get(`/api/users/${userId}`);
+    const rec = JsonHelper.parse(text);
+    return UserAccountModel.fromRecord(rec === null ? {} : rec);
   }
 }
 
@@ -122,5 +193,92 @@ export class UserRoleService {
 
   static async remove(roleId: string): Promise<void> {
     await HttpClient.getInstance().delete(`/api/users/roles/${roleId}`);
+  }
+
+  /** 上传角色头像（multipart file，201） */
+  static async uploadAvatar(roleId: string, fileName: string, contentType: string,
+    data: ArrayBuffer): Promise<void> {
+    await HttpClient.getInstance().postMultipartFile(
+      `/api/users/roles/${roleId}/avatar`, 'file', fileName, contentType, data);
+  }
+
+  /** 删除角色头像 */
+  static async deleteAvatar(roleId: string): Promise<void> {
+    await HttpClient.getInstance().delete(`/api/users/roles/${roleId}/avatar`);
+  }
+}
+
+/** 用户组（/api/user-groups，需 users 权限） */
+export class UserGroupService {
+  static async list(): Promise<Array<UserGroupModel>> {
+    const text: string = await HttpClient.getInstance().get('/api/user-groups');
+    return UserGroupModel.parseList(text);
+  }
+
+  /** 创建（userGroupId 可省略由服务端分配短 id） */
+  static async create(name: string, description: string, enabled: boolean = true,
+    userGroupId: string = ''): Promise<UserGroupModel> {
+    const body: Record<string, Object> = {
+      'name': name,
+      'description': description,
+      'enabled': enabled
+    };
+    if (userGroupId !== '') {
+      body['user_group_id'] = userGroupId;
+    }
+    const text: string =
+      await HttpClient.getInstance().post('/api/user-groups', JSON.stringify(body));
+    const rec = JsonHelper.parse(text);
+    return UserGroupModel.fromRecord(rec === null ? {} : rec);
+  }
+
+  static async patch(userGroupId: string, bodyStr: string): Promise<void> {
+    await HttpClient.getInstance().patch(`/api/user-groups/${userGroupId}`, bodyStr);
+  }
+
+  static async remove(userGroupId: string): Promise<void> {
+    await HttpClient.getInstance().delete(`/api/user-groups/${userGroupId}`);
+  }
+
+  /** 成员 id 列表 */
+  static async members(userGroupId: string): Promise<Array<number>> {
+    const text: string =
+      await HttpClient.getInstance().get(`/api/user-groups/${userGroupId}/members`);
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return [];
+    }
+    const ids: Array<number> = [];
+    const rawIds: Array<string> = JsonHelper.getStringArray(rec, 'user_ids');
+    for (const raw of rawIds) {
+      const parsed: number = Number(raw);
+      if (!Number.isNaN(parsed)) {
+        ids.push(parsed);
+      }
+    }
+    return ids;
+  }
+
+  /** 全量替换成员 */
+  static async replaceMembers(userGroupId: string, userIds: Array<number>): Promise<void> {
+    const ids: Array<Object> = [];
+    for (const id of userIds) {
+      ids.push(id);
+    }
+    const body: Record<string, Object> = { 'user_ids': ids };
+    await HttpClient.getInstance().put(
+      `/api/user-groups/${userGroupId}/members`, JSON.stringify(body));
+  }
+
+  /** 上传用户组头像（multipart file，201） */
+  static async uploadAvatar(userGroupId: string, fileName: string, contentType: string,
+    data: ArrayBuffer): Promise<void> {
+    await HttpClient.getInstance().postMultipartFile(
+      `/api/user-groups/${userGroupId}/avatar`, 'file', fileName, contentType, data);
+  }
+
+  /** 删除用户组头像 */
+  static async deleteAvatar(userGroupId: string): Promise<void> {
+    await HttpClient.getInstance().delete(`/api/user-groups/${userGroupId}/avatar`);
   }
 }

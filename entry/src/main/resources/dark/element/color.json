@@ -34,7 +34,7 @@
     },
     {
       "name": "bg_bubble_user",
-      "value": "#3D7FFF"
+      "value": "#E85D75"
     },
     {
       "name": "bg_bubble_assistant",
@@ -140,6 +140,11 @@
       "name": "card_glass",
       "value": "#99202124"
     },
+    {
+      "name": "pet_circle",
+      "value": "#333338"
+    },
+
     {
       "name": "panel_glass",
       "value": "#66202124"

@@ -7,6 +7,7 @@ import { ErrorRetry } from '../../components/ErrorRetry';
 import { PageHeader } from '../../components/PageHeader';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
 import { JsonHelper } from '../../utils/JsonHelper';
+import { MenuSheetContent, MenuSheetOption } from '../../components/MenuSheet';
 
 /** 我的连接器：目录添加（凭证/OAuth）/实例管理/自定义 MCP 开关 */
 @Component
@@ -31,6 +32,11 @@ export struct ConnectorPage {
   @State oauthStateId: string = '';
   @State oauthStatus: string = '';
   @State oauthPolling: boolean = false;
+  @State menuOpen: boolean = false;
+  @State menuTitle: string = '';
+  @State menuMessage: string = '';
+  @State menuOptions: Array<MenuSheetOption> = [];
+  private menuActions: Array<() => void> = [];
   private oauthTries: number = 0;
 
   aboutToAppear(): void {
@@ -307,48 +313,59 @@ export struct ConnectorPage {
   }
 
   private showMenu(instance: ConnectorInstanceModel): void {
-    const nextEnabled: boolean = instance.status !== 'active';
-    const sheets: Array<SheetInfo> = [
-      {
-        title: '测试连通性',
-        action: (): void => {
-          this.test(instance);
-        }
+    // ForEach 按 instanceId 复用组件时手势闭包可能持有旧对象，这里以最新列表数据为准
+    const fresh: ConnectorInstanceModel | undefined = this.instances.find(
+      (x: ConnectorInstanceModel): boolean => x.instanceId === instance.instanceId);
+    const current: ConnectorInstanceModel = fresh !== undefined ? fresh : instance;
+    const nextEnabled: boolean = current.status !== 'active';
+    const options: Array<MenuSheetOption> = [
+      new MenuSheetOption($r('sys.symbol.bolt'), '测试连通性', '', false)
+    ];
+    const actions: Array<() => void> = [
+      (): void => {
+        this.test(current);
       }
     ];
-    if (instance.canManage) {
-      sheets.push({
-        title: nextEnabled ? '启用连接器' : '停用连接器',
-        action: (): void => {
-          const body: Record<string, Object> = { 'enabled': nextEnabled };
-          this.patchInstance(instance, JSON.stringify(body), nextEnabled ? '已启用' : '已停用');
-        }
+    if (current.canManage) {
+      options.push(new MenuSheetOption(nextEnabled ? $r('sys.symbol.checkmark_circle') : $r('sys.symbol.xmark_circle'),
+        nextEnabled ? '启用连接器' : '停用连接器', '', false));
+      actions.push((): void => {
+        // 服务器 PatchInstanceBody 无 enabled 字段，需用 status: active|disabled
+        const body: Record<string, Object> = {
+          'status': nextEnabled ? 'active' : 'disabled'
+        };
+        this.patchInstance(current, JSON.stringify(body), nextEnabled ? '已启用' : '已停用');
       });
-      sheets.push({
-        title: instance.shared ? '取消共享' : '共享给他人',
-        action: (): void => {
-          const body: Record<string, Object> = { 'shared': !instance.shared };
-          this.patchInstance(instance, JSON.stringify(body), instance.shared ? '已取消共享' : '已共享');
-        }
+      options.push(new MenuSheetOption($r('sys.symbol.person_2'),
+        current.shared ? '取消共享' : '共享给他人', '', false));
+      actions.push((): void => {
+        const body: Record<string, Object> = { 'shared': !current.shared };
+        this.patchInstance(current, JSON.stringify(body), current.shared ? '已取消共享' : '已共享');
       });
-      sheets.push({
-        title: '刷新令牌',
-        action: (): void => {
-          this.refreshTokens(instance);
-        }
+      options.push(new MenuSheetOption($r('sys.symbol.arrow_clockwise'), '刷新令牌', '', false));
+      actions.push((): void => {
+        this.refreshTokens(current);
       });
-      sheets.push({
-        title: '删除连接器',
-        action: (): void => {
-          this.confirmDelete(instance);
-        }
+      options.push(new MenuSheetOption($r('sys.symbol.trash'), '删除连接器', '', true));
+      actions.push((): void => {
+        this.confirmDelete(current);
       });
     }
-    this.getUIContext().showActionSheet({
-      title: instance.displayName,
-      message: '选择要执行的操作',
-      sheets: sheets
-    });
+    this.menuTitle = instance.displayName;
+    this.menuMessage = '选择要执行的操作';
+    this.menuOptions = options;
+    this.menuActions = actions;
+    this.menuOpen = true;
+  }
+
+  /** 菜单选中：先关半模态再执行预置动作（越界保护） */
+  private onMenuSelect(index: number): void {
+    this.menuOpen = false;
+    if (index < 0 || index >= this.menuActions.length) {
+      return;
+    }
+    const action: () => void = this.menuActions[index];
+    action();
   }
 
   private confirmDelete(instance: ConnectorInstanceModel): void {
@@ -743,7 +760,8 @@ export struct ConnectorPage {
                         })
                     )
                   }
-                }, (instance: ConnectorInstanceModel) => instance.instanceId)
+                 }, (instance: ConnectorInstanceModel) =>
+                   `${instance.instanceId}-${instance.status}-${instance.shared}-${instance.hasCredentials}-${instance.ownerUsername}`)
 
                 if (this.mcpServers.length > 0) {
                   ListItem() {
@@ -795,7 +813,8 @@ export struct ConnectorPage {
                     .border({ width: 1, color: $r('app.color.card_stroke') })
                     .shadow({ radius: 10, color: '#0A000000', offsetY: 3 })
                   }
-                }, (server: CustomMcpServerModel) => `${server.name}-${server.enabled}`)
+                 }, (server: CustomMcpServerModel) =>
+                   `${server.name}-${server.enabled}-${server.shared}-${server.defaultOpen}`)
               }
               .width('100%')
               .height('100%')
@@ -845,5 +864,22 @@ export struct ConnectorPage {
     }
     .hideTitleBar(true)
     .backgroundColor($r('app.color.bg_page'))
+    .bindSheet($$this.menuOpen, this.menuSheetBuilder, {
+      detents: [SheetSize.FIT_CONTENT],
+      showClose: true,
+      systemMaterial: UiMaterialKit.sheet()
+    })
+  }
+
+  @Builder
+  menuSheetBuilder() {
+    MenuSheetContent({
+      title: this.menuTitle,
+      message: this.menuMessage,
+      options: this.menuOptions,
+      onSelect: (index: number): void => {
+        this.onMenuSelect(index);
+      }
+    })
   }
 }

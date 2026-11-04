@@ -197,7 +197,7 @@ export struct ExpertCreatePage {
     }
     this.installing = true;
     try {
-      await AgentService.installPublished(item.id);
+      await AgentService.installPublished(item.id, item.label);
       SessionStore.markAgentsDirty();
       this.getUIContext().getPromptAction().showToast({ message: `「${item.label}」安装成功` });
       this.popPage();
@@ -735,6 +735,7 @@ export struct ExpertCreatePage {
                   .borderRadius(12)
                   .width('100%')
                   .systemMaterial(UiMaterialKit.button())
+                  .menuSystemMaterial(UiMaterialKit.sheet())
                   .onSelect((index: number, text: string): void => {
                     this.customMbti = text;
                   })

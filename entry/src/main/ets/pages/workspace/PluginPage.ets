@@ -11,6 +11,7 @@ import { EmptyView } from '../../components/EmptyView';
 import { ErrorRetry } from '../../components/ErrorRetry';
 import { PageHeader } from '../../components/PageHeader';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
+import { MenuSheetContent, MenuSheetOption } from '../../components/MenuSheet';
 
 /** 插件管理：全局插件（启停/卸载/市场/URL 安装/重载）+ 此专家插件开关与工具配置 */
 @Component
@@ -31,6 +32,11 @@ export struct PluginPage {
   @State marketLoading: boolean = false;
   @State urlText: string = '';
   @State installing: boolean = false;
+  @State menuOpen: boolean = false;
+  @State menuTitle: string = '';
+  @State menuMessage: string = '';
+  @State menuOptions: Array<MenuSheetOption> = [];
+  private menuActions: Array<() => void> = [];
   private agentId: string = '';
 
   private onNavReady(ctx: NavDestinationContext): void {
@@ -155,26 +161,33 @@ export struct PluginPage {
   }
 
   private showInstallMenu(): void {
-    this.getUIContext().showActionSheet({
-      title: '安装插件',
-      message: '选择安装方式',
-      sheets: [
-        {
-          title: '从市场安装',
-          action: (): void => {
-            this.openMarket();
-          }
-        },
-        {
-          title: '通过 URL 安装',
-          action: (): void => {
-            this.urlText = '';
-            this.sheetMode = 'url';
-            this.sheetOpen = true;
-          }
-        }
-      ]
-    });
+    this.menuTitle = '安装插件';
+    this.menuMessage = '选择安装方式';
+    this.menuOptions = [
+      new MenuSheetOption($r('sys.symbol.square_grid_2x2'), '从市场安装', '浏览官方插件市场', false),
+      new MenuSheetOption($r('sys.symbol.link'), '通过 URL 安装', '输入插件包地址', false)
+    ];
+    this.menuActions = [
+      (): void => {
+        this.openMarket();
+      },
+      (): void => {
+        this.urlText = '';
+        this.sheetMode = 'url';
+        this.sheetOpen = true;
+      }
+    ];
+    this.menuOpen = true;
+  }
+
+  /** 菜单选中：先关半模态再执行预置动作（越界保护） */
+  private onMenuSelect(index: number): void {
+    this.menuOpen = false;
+    if (index < 0 || index >= this.menuActions.length) {
+      return;
+    }
+    const action: () => void = this.menuActions[index];
+    action();
   }
 
   private async openMarket(): Promise<void> {
@@ -314,10 +327,15 @@ export struct PluginPage {
         } else {
           Scroll() {
             Column({ space: 12 }) {
-              Row({ space: 10 }) {
+              Row({ space: 8 }) {
+                Column()
+                  .width(3)
+                  .height(14)
+                  .borderRadius(2)
+                  .backgroundColor($r('app.color.brand'))
                 Text('全局插件')
-                  .fontSize(14)
-                  .fontWeight(FontWeight.Bold)
+                  .fontSize(15)
+                  .fontWeight(FontWeight.Medium)
                   .fontColor($r('app.color.text_primary'))
                   .layoutWeight(1)
                 Button('重载')
@@ -377,11 +395,11 @@ export struct PluginPage {
                         .fontSize(20)
                         .fontColor([$r('app.color.brand')])
                     }
-                    .width(40)
-                    .height(40)
+                    .width(44)
+                    .height(44)
                     .justifyContent(FlexAlign.Center)
                     .backgroundColor($r('app.color.brand_light'))
-                    .borderRadius(13)
+                    .borderRadius(14)
                     .opacity(plugin.enabled ? 1 : 0.5)
                     Column({ space: 4 }) {
                       Row({ space: 6 }) {
@@ -425,10 +443,11 @@ export struct PluginPage {
                       })
                   }
                   .width('100%')
-                  .padding(12)
-                  .borderRadius(14)
+                  .padding(14)
+                  .borderRadius(16)
                   .backgroundColor($r('app.color.bg_card'))
                   .border({ width: 1, color: $r('app.color.card_stroke') })
+                  .shadow({ radius: 10, color: '#0A000000', offsetY: 3 })
                   .gesture(
                     LongPressGesture()
                       .onAction((event: GestureEvent): void => {
@@ -438,10 +457,15 @@ export struct PluginPage {
                 }, (plugin: GlobalPluginModel) => plugin.id)
               }
 
-              Row({ space: 10 }) {
+              Row({ space: 8 }) {
+                Column()
+                  .width(3)
+                  .height(14)
+                  .borderRadius(2)
+                  .backgroundColor($r('app.color.brand'))
                 Text('此专家插件')
-                  .fontSize(14)
-                  .fontWeight(FontWeight.Bold)
+                  .fontSize(15)
+                  .fontWeight(FontWeight.Medium)
                   .fontColor($r('app.color.text_primary'))
                   .layoutWeight(1)
                 Button('工具配置')
@@ -554,6 +578,23 @@ export struct PluginPage {
     .onReady((ctx: NavDestinationContext): void => {
       this.onNavReady(ctx);
     })
+    .bindSheet($$this.menuOpen, this.menuSheetBuilder, {
+      detents: [SheetSize.FIT_CONTENT],
+      showClose: true,
+      systemMaterial: UiMaterialKit.sheet()
+    })
+  }
+
+  @Builder
+  menuSheetBuilder() {
+    MenuSheetContent({
+      title: this.menuTitle,
+      message: this.menuMessage,
+      options: this.menuOptions,
+      onSelect: (index: number): void => {
+        this.onMenuSelect(index);
+      }
+    })
   }
 
   /** 单 bindSheet 分发：market / url / tools */
@@ -573,7 +614,7 @@ export struct PluginPage {
     Column({ space: 12 }) {
       Text('插件市场')
         .fontSize(17)
-        .fontWeight(FontWeight.Bold)
+        .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
 
@@ -661,7 +702,7 @@ export struct PluginPage {
     Column({ space: 14 }) {
       Text('通过 URL 安装')
         .fontSize(17)
-        .fontWeight(FontWeight.Bold)
+        .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
 
@@ -679,13 +720,15 @@ export struct PluginPage {
 
       Button(this.installing ? '安装中...' : '安装')
         .fontSize(14)
-        .height(42)
-        .borderRadius(21)
+        .fontWeight(FontWeight.Medium)
+        .height(40)
+        .borderRadius(20)
         .width('100%')
         .linearGradient({
           angle: 140,
           colors: [[$r('app.color.brand_grad_start'), 0], [$r('app.color.brand_grad_end'), 1]]
         })
+        .shadow({ radius: 10, color: '#260A59F7', offsetY: 4 })
         .fontColor($r('app.color.text_on_brand'))
         .enabled(!this.installing)
         .onClick((): void => {
@@ -701,7 +744,7 @@ export struct PluginPage {
     Column({ space: 12 }) {
       Text('工具配置')
         .fontSize(17)
-        .fontWeight(FontWeight.Bold)
+        .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
 

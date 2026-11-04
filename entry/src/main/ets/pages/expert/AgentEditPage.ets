@@ -1,5 +1,6 @@
 import { AgentModel } from '../../model/AgentModels';
 import { AgentService } from '../../service/AgentService';
+import { ProactiveCareModel, ProactiveCareService } from '../../service/ProactiveCareService';
 import { OctopApiError } from '../../net/HttpClient';
 import { SessionStore } from '../../store/SessionStore';
 import { ErrorRetry } from '../../components/ErrorRetry';
@@ -7,6 +8,7 @@ import { ModelPickerSheet } from '../../components/ModelPickerSheet';
 import { fileIo, picker } from '@kit.CoreFileKit';
 import { PageHeader } from '../../components/PageHeader';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
+import { MenuSheetContent, MenuSheetOption } from '../../components/MenuSheet';
 
 /** 路由参数：待编辑的智能体 */
 export class AgentEditNavParam {
@@ -70,6 +72,25 @@ export struct AgentEditPage {
   @State iconUrl: string = '';
   @State avatarRev: number = 0;
   @State modelSheetOpen: boolean = false;
+  @State menuOpen: boolean = false;
+  @State menuTitle: string = '';
+  @State menuMessage: string = '';
+  @State menuOptions: Array<MenuSheetOption> = [];
+  private menuActions: Array<() => void> = [];
+  @State careLoaded: boolean = false;
+  @State careEnabled: boolean = false;
+  @State careStartText: string = '09:00';
+  @State careEndText: string = '21:00';
+  @State careMinHoursText: string = '4';
+  @State careMaxHoursText: string = '24';
+  @State careSaving: boolean = false;
+  @State publishOpen: boolean = false;
+  @State publishName: string = '';
+  @State publishDesc: string = '';
+  @State publishSlug: string = '';
+  @State publishWelcome: string = '';
+  @State publishPrompts: string = '';
+  @State publishSaving: boolean = false;
   private pathStack: NavPathStack | null = null;
   private agentId: string = '';
   private agentName: string = '';
@@ -101,6 +122,7 @@ export struct AgentEditPage {
       this.agentState = agent.state;
       this.iconUrl = agent.iconUrl;
       this.avatarRev += 1;
+      this.loadCare();
     } catch (e) {
       this.loadError = e instanceof OctopApiError ? e.message : '专家信息加载失败';
     } finally {
@@ -119,6 +141,70 @@ export struct AgentEditPage {
       'is_shared': this.sharedOn
     };
     return JSON.stringify(body);
+  }
+
+  /** 拉取主动关怀配置（独立端点；失败不阻塞编辑页） */
+  private loadCare(): void {
+    ProactiveCareService.get(this.agentId).then((care: ProactiveCareModel): void => {
+      this.careEnabled = care.enabled;
+      this.careStartText = care.activeHoursStart;
+      this.careEndText = care.activeHoursEnd;
+      this.careMinHoursText = `${care.minIntervalHours}`;
+      this.careMaxHoursText = `${care.maxIntervalHours}`;
+      this.careLoaded = true;
+    }).catch((): void => {
+      this.careLoaded = false;
+    });
+  }
+
+  private isValidTime(text: string): boolean {
+    if (text.length !== 5 || text.charAt(2) !== ':') {
+      return false;
+    }
+    const hour: number = Number(text.substring(0, 2));
+    const minute: number = Number(text.substring(3, 5));
+    if (Number.isNaN(hour) || Number.isNaN(minute)) {
+      return false;
+    }
+    return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+  }
+
+  private async saveCare(): Promise<void> {
+    if (this.careSaving) {
+      return;
+    }
+    const start: string = this.careStartText.trim();
+    const end: string = this.careEndText.trim();
+    const minHours: number = Number(this.careMinHoursText.trim());
+    const maxHours: number = Number(this.careMaxHoursText.trim());
+    if (!this.isValidTime(start) || !this.isValidTime(end)) {
+      this.getUIContext().getPromptAction().showToast({ message: '活跃时间格式应为 HH:MM' });
+      return;
+    }
+    if (Number.isNaN(minHours) || minHours <= 0) {
+      this.getUIContext().getPromptAction().showToast({ message: '最小间隔需为正数（小时）' });
+      return;
+    }
+    if (Number.isNaN(maxHours) || maxHours < minHours) {
+      this.getUIContext().getPromptAction().showToast({ message: '最大间隔不能小于最小间隔' });
+      return;
+    }
+    this.careSaving = true;
+    try {
+      const care = await ProactiveCareService.put(this.agentId,
+        new ProactiveCareModel(this.careEnabled, start, end, minHours, maxHours));
+      this.careEnabled = care.enabled;
+      this.careStartText = care.activeHoursStart;
+      this.careEndText = care.activeHoursEnd;
+      this.careMinHoursText = `${care.minIntervalHours}`;
+      this.careMaxHoursText = `${care.maxIntervalHours}`;
+      this.getUIContext().getPromptAction().showToast({ message: '主动关怀已保存' });
+    } catch (e) {
+      const message: string = e instanceof OctopApiError ? e.message : '保存失败';
+      this.getUIContext().getPromptAction().showToast({ message });
+    } finally {
+      this.careSaving = false;
+    }
   }
 
   private async save(): Promise<void> {
@@ -142,27 +228,75 @@ export struct AgentEditPage {
     }
   }
 
+  // ---- 发布为专家模板 ----
+
+  private showPublish(): void {
+    this.publishName = this.nameText.trim();
+    this.publishDesc = this.descriptionText.trim();
+    this.publishSlug = '';
+    this.publishWelcome = this.welcomeText.trim();
+    this.publishPrompts = '';
+    this.publishOpen = true;
+  }
+
+  private async submitPublish(): Promise<void> {
+    if (this.publishSaving) {
+      return;
+    }
+    const name: string = this.publishName.trim();
+    if (name === '') {
+      this.getUIContext().getPromptAction().showToast({ message: '请填写专家名称' });
+      return;
+    }
+    this.publishSaving = true;
+    try {
+      const prompts: string[] = [];
+      for (const line of this.publishPrompts.split('\n')) {
+        const t: string = line.trim();
+        if (t !== '') {
+          prompts.push(t);
+        }
+      }
+      await AgentService.publishExpert(this.agentId, name, this.publishDesc.trim(),
+        this.publishSlug.trim(), this.publishWelcome.trim(), prompts);
+      this.publishOpen = false;
+      this.getUIContext().getPromptAction().showToast({ message: '已发布为专家模板' });
+    } catch (e) {
+      const message: string = e instanceof OctopApiError ? e.message : '发布失败';
+      this.getUIContext().getPromptAction().showToast({ message });
+    } finally {
+      this.publishSaving = false;
+    }
+  }
+
   // ---- 头像 ----
 
   private showAvatarMenu(): void {
-    this.getUIContext().showActionSheet({
-      title: '头像',
-      message: '选择头像操作',
-      sheets: [
-        {
-          title: '上传头像',
-          action: (): void => {
-            this.pickAndUploadAvatar();
-          }
-        },
-        {
-          title: '删除头像',
-          action: (): void => {
-            this.deleteAvatar();
-          }
-        }
-      ]
-    });
+    this.menuTitle = '头像';
+    this.menuMessage = '选择头像操作';
+    this.menuOptions = [
+      new MenuSheetOption($r('sys.symbol.person'), '上传头像', '从文件选取新头像', false),
+      new MenuSheetOption($r('sys.symbol.trash'), '删除头像', '恢复为默认头像', true)
+    ];
+    this.menuActions = [
+      (): void => {
+        this.pickAndUploadAvatar();
+      },
+      (): void => {
+        this.deleteAvatar();
+      }
+    ];
+    this.menuOpen = true;
+  }
+
+  /** 菜单选中：先关半模态再执行预置动作（越界保护） */
+  private onMenuSelect(index: number): void {
+    this.menuOpen = false;
+    if (index < 0 || index >= this.menuActions.length) {
+      return;
+    }
+    const action: () => void = this.menuActions[index];
+    action();
   }
 
   private async pickAndUploadAvatar(): Promise<void> {
@@ -605,6 +739,123 @@ export struct AgentEditPage {
               .shadow({ radius: 10, color: '#0A000000', offsetY: 3 })
               .alignItems(HorizontalAlign.Start)
 
+              // 主动关怀
+              if (this.careLoaded) {
+                Column({ space: 12 }) {
+                  Row() {
+                    Column({ space: 2 }) {
+                      Text('主动关怀')
+                        .fontSize(14)
+                        .fontWeight(FontWeight.Medium)
+                        .fontColor($r('app.color.text_primary'))
+                      Text('专家在活跃时段内定期主动发消息关怀')
+                        .fontSize(12)
+                        .fontColor($r('app.color.text_tertiary'))
+                    }
+                    .alignItems(HorizontalAlign.Start)
+                    .layoutWeight(1)
+                    Toggle({ type: ToggleType.Switch, isOn: this.careEnabled })
+                      .onChange((isOn: boolean): void => {
+                        this.careEnabled = isOn;
+                      })
+                  }
+                  .width('100%')
+
+                  if (this.careEnabled) {
+                    Row({ space: 10 }) {
+                      Column({ space: 6 }) {
+                        Text('开始时间')
+                          .fontSize(12)
+                          .fontColor($r('app.color.text_secondary'))
+                        TextInput({ text: this.careStartText, placeholder: 'HH:MM' })
+                          .fontSize(14)
+                          .height(40)
+                          .backgroundColor($r('app.color.bg_input'))
+                          .borderRadius(10)
+                          .onChange((value: string): void => {
+                            this.careStartText = value;
+                          })
+                      }
+                      .layoutWeight(1)
+                      .alignItems(HorizontalAlign.Start)
+
+                      Column({ space: 6 }) {
+                        Text('结束时间')
+                          .fontSize(12)
+                          .fontColor($r('app.color.text_secondary'))
+                        TextInput({ text: this.careEndText, placeholder: 'HH:MM' })
+                          .fontSize(14)
+                          .height(40)
+                          .backgroundColor($r('app.color.bg_input'))
+                          .borderRadius(10)
+                          .onChange((value: string): void => {
+                            this.careEndText = value;
+                          })
+                      }
+                      .layoutWeight(1)
+                      .alignItems(HorizontalAlign.Start)
+                    }
+                    .width('100%')
+
+                    Row({ space: 10 }) {
+                      Column({ space: 6 }) {
+                        Text('最小间隔（小时）')
+                          .fontSize(12)
+                          .fontColor($r('app.color.text_secondary'))
+                        TextInput({ text: this.careMinHoursText })
+                          .fontSize(14)
+                          .height(40)
+                          .backgroundColor($r('app.color.bg_input'))
+                          .borderRadius(10)
+                          .type(InputType.Number)
+                          .onChange((value: string): void => {
+                            this.careMinHoursText = value;
+                          })
+                      }
+                      .layoutWeight(1)
+                      .alignItems(HorizontalAlign.Start)
+
+                      Column({ space: 6 }) {
+                        Text('最大间隔（小时）')
+                          .fontSize(12)
+                          .fontColor($r('app.color.text_secondary'))
+                        TextInput({ text: this.careMaxHoursText })
+                          .fontSize(14)
+                          .height(40)
+                          .backgroundColor($r('app.color.bg_input'))
+                          .borderRadius(10)
+                          .type(InputType.Number)
+                          .onChange((value: string): void => {
+                            this.careMaxHoursText = value;
+                          })
+                      }
+                      .layoutWeight(1)
+                      .alignItems(HorizontalAlign.Start)
+                    }
+                    .width('100%')
+                  }
+
+                  Button(this.careSaving ? '保存中...' : '保存关怀设置')
+                    .fontSize(13)
+                    .height(36)
+                    .width('100%')
+                    .borderRadius(18)
+                    .backgroundColor($r('app.color.brand_light'))
+                    .fontColor($r('app.color.brand'))
+                    .enabled(!this.careSaving)
+                    .onClick((): void => {
+                      this.saveCare();
+                    })
+                }
+                .width('100%')
+                .padding(16)
+                .borderRadius(16)
+                .backgroundColor($r('app.color.bg_card'))
+                .border({ width: 1, color: $r('app.color.card_stroke') })
+                .shadow({ radius: 10, color: '#0A000000', offsetY: 3 })
+                .alignItems(HorizontalAlign.Start)
+              }
+
               // 保存按钮
               Button(this.saving ? '保存中...' : '保存修改')
                 .fontSize(15)
@@ -618,6 +869,30 @@ export struct AgentEditPage {
                 .onClick((): void => {
                   this.save();
                 })
+
+              // 发布为专家模板
+              Row({ space: 8 }) {
+                SymbolGlyph($r('sys.symbol.wand_and_stars'))
+                  .fontSize(16)
+                  .fontColor([$r('app.color.brand')])
+                Text('发布为专家模板')
+                  .fontSize(15)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor($r('app.color.brand'))
+              }
+              .width('100%')
+              .padding({ top: 14, bottom: 14 })
+              .borderRadius(16)
+              .backgroundColor($r('app.color.brand_light'))
+              .justifyContent(FlexAlign.Center)
+              .onClick((): void => {
+                this.showPublish();
+              })
+              .bindSheet($$this.publishOpen, this.publishBuilder, {
+                detents: [SheetSize.LARGE],
+                showClose: true,
+                systemMaterial: UiMaterialKit.sheet()
+              })
 
               // 删除
               Row({ space: 8 }) {
@@ -658,6 +933,135 @@ export struct AgentEditPage {
     .backgroundColor($r('app.color.bg_page'))
     .onReady((ctx: NavDestinationContext): void => {
       this.onNavReady(ctx);
+    })
+    .bindSheet($$this.menuOpen, this.menuSheetBuilder, {
+      detents: [SheetSize.FIT_CONTENT],
+      showClose: true,
+      systemMaterial: UiMaterialKit.sheet()
+    })
+  }
+
+  @Builder
+  publishBuilder() {
+    Scroll() {
+      Column({ space: 12 }) {
+        Text('发布为专家模板')
+          .fontSize(17)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+        Text('将当前专家的工作区与配置打包发布，其他用户可从“已发布”列表安装')
+          .fontSize(12)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+
+        Column({ space: 6 }) {
+          Text('名称 *')
+            .fontSize(13)
+            .fontColor($r('app.color.text_secondary'))
+          TextInput({ text: this.publishName, placeholder: '专家名称' })
+            .fontSize(14)
+            .height(42)
+            .backgroundColor($r('app.color.bg_input'))
+            .borderRadius(12)
+            .onChange((value: string): void => {
+              this.publishName = value;
+            })
+        }
+        .width('100%')
+
+        Column({ space: 6 }) {
+          Text('简介')
+            .fontSize(13)
+            .fontColor($r('app.color.text_secondary'))
+          TextArea({ text: this.publishDesc, placeholder: '这个专家擅长什么' })
+            .fontSize(14)
+            .height(64)
+            .backgroundColor($r('app.color.bg_input'))
+            .borderRadius(12)
+            .onChange((value: string): void => {
+              this.publishDesc = value;
+            })
+        }
+        .width('100%')
+
+        Column({ space: 6 }) {
+          Text('自定义 slug（可选）')
+            .fontSize(13)
+            .fontColor($r('app.color.text_secondary'))
+          TextInput({ text: this.publishSlug, placeholder: '留空自动生成' })
+            .fontSize(14)
+            .height(42)
+            .backgroundColor($r('app.color.bg_input'))
+            .borderRadius(12)
+            .onChange((value: string): void => {
+              this.publishSlug = value;
+            })
+        }
+        .width('100%')
+
+        Column({ space: 6 }) {
+          Text('欢迎语')
+            .fontSize(13)
+            .fontColor($r('app.color.text_secondary'))
+          TextArea({ text: this.publishWelcome, placeholder: '安装后的欢迎消息' })
+            .fontSize(14)
+            .height(64)
+            .backgroundColor($r('app.color.bg_input'))
+            .borderRadius(12)
+            .onChange((value: string): void => {
+              this.publishWelcome = value;
+            })
+        }
+        .width('100%')
+
+        Column({ space: 6 }) {
+          Text('快捷指令（每行一个，可选）')
+            .fontSize(13)
+            .fontColor($r('app.color.text_secondary'))
+          TextArea({ text: this.publishPrompts, placeholder: '帮我写周报；总结今天的会议' })
+            .fontSize(14)
+            .height(80)
+            .backgroundColor($r('app.color.bg_input'))
+            .borderRadius(12)
+            .onChange((value: string): void => {
+              this.publishPrompts = value;
+            })
+        }
+        .width('100%')
+
+        Button(this.publishSaving ? '发布中...' : '发布')
+          .fontSize(15)
+          .fontWeight(FontWeight.Bold)
+          .height(44)
+          .width('100%')
+          .borderRadius(22)
+          .linearGradient({
+            angle: 140,
+            colors: [[$r('app.color.brand_grad_start'), 0], [$r('app.color.brand_grad_end'), 1]]
+          })
+          .fontColor($r('app.color.text_on_brand'))
+          .enabled(!this.publishSaving)
+          .onClick((): void => {
+            this.submitPublish();
+          })
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 12, bottom: 20 })
+    }
+    .width('100%')
+    .scrollBar(BarState.Off)
+  }
+
+  @Builder
+  menuSheetBuilder() {
+    MenuSheetContent({
+      title: this.menuTitle,
+      message: this.menuMessage,
+      options: this.menuOptions,
+      onSelect: (index: number): void => {
+        this.onMenuSelect(index);
+      }
     })
   }
 

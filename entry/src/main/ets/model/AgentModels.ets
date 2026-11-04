@@ -102,3 +102,38 @@ export class AgentModel {
     return result;
   }
 }
+
+/** 心跳主动唤醒配置（agent_files.py GET/PUT /api/agents/{id}/heartbeat-config） */
+export class HeartbeatConfigModel {
+  readonly enabled: boolean;
+  readonly every: string; // 服务端心跳间隔表达（如 30m / 1h）
+  readonly target: string; // 唤醒目标（如 user）
+  readonly activeHoursEnabled: boolean;
+  readonly activeHoursStart: string; // "HH:MM"
+  readonly activeHoursEnd: string;
+
+  constructor(enabled: boolean, every: string, target: string,
+    activeHoursEnabled: boolean, activeHoursStart: string, activeHoursEnd: string) {
+    this.enabled = enabled;
+    this.every = every;
+    this.target = target;
+    this.activeHoursEnabled = activeHoursEnabled;
+    this.activeHoursStart = activeHoursStart;
+    this.activeHoursEnd = activeHoursEnd;
+  }
+
+  static parse(text: string): HeartbeatConfigModel {
+    const rec = JsonHelper.parse(text);
+    if (rec === null) {
+      return new HeartbeatConfigModel(false, '1h', 'user', false, '09:00', '21:00');
+    }
+    return new HeartbeatConfigModel(
+      JsonHelper.getBool(rec, 'enabled', false),
+      JsonHelper.getString(rec, 'every', '1h'),
+      JsonHelper.getString(rec, 'target', 'user'),
+      JsonHelper.getBool(rec, 'active_hours_enabled', false),
+      JsonHelper.getString(rec, 'active_hours_start', '09:00'),
+      JsonHelper.getString(rec, 'active_hours_end', '21:00')
+    );
+  }
+}

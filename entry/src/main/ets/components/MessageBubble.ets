@@ -1,8 +1,51 @@
 import { ChatMessageModel, ChatRole, ToolCallModel, MsgAttachmentModel } from '../model/MessageModels';
-import { TimeFormat } from '../utils/TimeFormat';
 import { MarkdownText } from './MarkdownText';
-import { StreamingOrbit } from './StreamingOrbit';
+import { BusyOctop } from './StreamingOrbit';
+import { VoiceService } from '../service/VoiceService';
+import { AudioIOService } from '../service/AudioIOService';
+import { LocalTtsService, LocalTtsCallbacks } from '../service/LocalTtsService';
+import { I18nService } from '../service/I18nService';
+import { OctopApiError } from '../net/HttpClient';
+import { UiMaterialKit } from './UiMaterialKit';
+import { TodoProgressPanel } from './TodoProgressPanel';
+import {
+  TodoListItem,
+  isWriteTodosToolName,
+  collectTodoItems,
+  parsePartialTodoItems,
+  mergeTodoItems
+} from '../utils/ParseWriteTodos';
 import { pasteboard } from '@kit.BasicServicesKit';
+
+/** MessageBubble 专用本机朗读回调：命名类实现（避免 struct 方法内对象字面量），驱动按钮三态与错误 toast */
+class BubbleTtsCallbacks implements LocalTtsCallbacks {
+  private readonly owner: MessageBubble;
+
+  constructor(owner: MessageBubble) {
+    this.owner = owner;
+  }
+
+  onStart(): void {
+    this.owner.speakingBusy = false;
+    this.owner.speaking = true;
+  }
+
+  onComplete(): void {
+    this.owner.speakingBusy = false;
+    this.owner.speaking = false;
+  }
+
+  onStop(): void {
+    this.owner.speakingBusy = false;
+    this.owner.speaking = false;
+  }
+
+  onError(message: string): void {
+    this.owner.speakingBusy = false;
+    this.owner.speaking = false;
+    this.owner.getUIContext().getPromptAction().showToast({ message: message === '' ? '朗读失败' : message });
+  }
+}
 
 /** 单条消息气泡：用户右对齐渐变蓝底，助手左对齐卡片，支持流式增量刷新与思考折叠/消息操作栏 */
 @Component
@@ -10,6 +53,10 @@ export struct MessageBubble {
   @ObjectLink msg: ChatMessageModel;
   @State reasoningExpanded: boolean = false;
   @State toolCallExpanded: boolean = false;
+  @State speaking: boolean = false;
+  @State speakingBusy: boolean = false;
+  /** 当前朗读走本机引擎链路（true）还是服务器播放器链路（false）：停止按钮分流用 */
+  private speakingLocal: boolean = false;
   onRetry: () => void = (): void => {
   };
   /** 排队追问撤回（气泡下方"撤回"按钮） */
@@ -34,21 +81,142 @@ export struct MessageBubble {
     this.reasoningExpanded = !this.reasoningExpanded;
   }
 
-  @Builder
-  copyButton() {
-    Row({ space: 4 }) {
-      SymbolGlyph($r('sys.symbol.doc_text'))
-        .fontSize(13)
-        .fontColor([$r('app.color.text_tertiary')])
-      Text('复制')
-        .fontSize(11)
-        .fontColor($r('app.color.text_tertiary'))
+  /** 去除 Markdown 标记得到适合朗读的纯文本 */
+  private ttsPlainText(): string {
+    let text: string = this.msg.text;
+    text = text.replace(/```[\s\S]*?```/g, '（代码略）');
+    text = text.replace(/`([^`]*)`/g, '$1');
+    text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, '');
+    text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+    text = text.replace(/^#{1,6}\s*/gm, '');
+    text = text.replace(/[*_~]{1,3}([^*_~\n]+)[*_~]{1,3}/g, '$1');
+    text = text.replace(/^>\s*/gm, '');
+    text = text.replace(/^\s*[-*+]\s+/gm, '');
+    text = text.replace(/^\s*\d+\.\s+/gm, '');
+    text = text.replace(/\|/g, ' ');
+    return text.trim();
+  }
+
+  /** 朗读/停止朗读：本机引擎走 CoreSpeechKit 端侧合成（引擎自播）；否则走既有服务器 TTS → 临时文件 → AVPlayer 播放 */
+  private async toggleSpeak(): Promise<void> {
+    if (this.speakingBusy) {
+      return;
     }
-    .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-    .borderRadius(10)
-    .onClick((): void => {
-      this.copyText();
-    })
+    if (this.speaking) {
+      this.speaking = false;
+      if (this.speakingLocal) {
+        LocalTtsService.stop();
+      } else {
+        AudioIOService.stopPlayback();
+      }
+      return;
+    }
+    const text: string = this.ttsPlainText();
+    if (text === '') {
+      return;
+    }
+    await LocalTtsService.ensureLoaded();
+    if (LocalTtsService.isLocalBackend()) {
+      await this.speakLocal(text);
+      return;
+    }
+    this.speakingBusy = true;
+    this.speakingLocal = false;
+    try {
+      const data: ArrayBuffer = await VoiceService.tts(text);
+      this.speakingBusy = false;
+      this.speaking = true;
+      AudioIOService.playTts(getContext(this), data, (): void => {
+        this.speaking = false;
+      }, (): void => {
+        this.getUIContext().getPromptAction().showToast({ message: '音频播放失败' });
+      });
+    } catch (e) {
+      this.speakingBusy = false;
+      if (e instanceof OctopApiError &&
+        (e.code === 'VOICE_BROWSER_ONLY' || e.code === 'VOICE_KIND_UNSUPPORTED')) {
+        this.getUIContext().getPromptAction().showToast({
+          message: '请先在「我的 → 语音设置」配置 TTS 服务'
+        });
+        return;
+      }
+      this.getUIContext().getPromptAction().showToast({
+        message: e instanceof OctopApiError && e.message !== '' ? e.message : '朗读失败'
+      });
+    }
+  }
+
+  /** 本机引擎朗读：端侧合成播放，回调驱动按钮三态（合成中 loading → 播放中停止态 → 播完复位） */
+  private async speakLocal(text: string): Promise<void> {
+    this.speakingBusy = true;
+    this.speakingLocal = true;
+    try {
+      await LocalTtsService.speak(text, new BubbleTtsCallbacks(this));
+    } catch (e) {
+      this.speakingBusy = false;
+      this.speaking = false;
+      this.getUIContext().getPromptAction().showToast({ message: '本机语音引擎不可用' });
+    }
+  }
+
+  /** 助手气泡条件最小宽度：流式 0（无操作行不撑宽）；非流式带用量 200 / 无用量 120（三按钮 72+间距+用量 Text 余量+padding 28 核算保底） */
+  private bubbleMinWidth(): number {
+    if (this.msg.streaming) {
+      return 0;
+    }
+    return this.msg.usageIn > 0 || this.msg.usageOut > 0 ? 200 : 120;
+  }
+
+  /** US2：消息内是否含 write_todos 调用（命中即渲染任务进度面板） */
+  private hasWriteTodosCall(): boolean {
+    for (const call of this.msg.toolCalls) {
+      if (isWriteTodosToolName(call.name)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** US2：剔除 write_todos 后的通用工具调用序列（其余工具折叠卡渲染不变） */
+  private nonTodoToolCalls(): Array<ToolCallModel> {
+    const result: Array<ToolCallModel> = [];
+    for (const call of this.msg.toolCalls) {
+      if (!isWriteTodosToolName(call.name)) {
+        result.push(call);
+      }
+    }
+    return result;
+  }
+
+  /** US2：单个 write_todos 调用解析——先完整解析（collectTodoItems），为空再截断部分解析兜底
+   *  （parsePartialTodoItems，流式 args 不完整时静默跳过、不崩不显示半截） */
+  private parseTodoCallItems(call: ToolCallModel): Array<TodoListItem> {
+    const full: Array<TodoListItem> = collectTodoItems(call.argsText);
+    if (full.length > 0) {
+      return full;
+    }
+    return parsePartialTodoItems(call.argsText);
+  }
+
+  /** US2：消息内全部 write_todos 调用按出现顺序链式合并（后写覆盖同 id），输出计划序清单 */
+  private todoPanelItems(): Array<TodoListItem> {
+    let merged: Array<TodoListItem> = [];
+    for (const call of this.msg.toolCalls) {
+      if (isWriteTodosToolName(call.name)) {
+        merged = mergeTodoItems(merged, this.parseTodoCallItems(call));
+      }
+    }
+    return merged;
+  }
+
+  /** US3：流式期折叠行静态思考标签（消除跳动预览）；reasoningStartAt 非空时附秒数计时 */
+  private thinkingLabel(): string {
+    const startAt: number = this.msg.reasoningStartAt ?? 0;
+    if (startAt > 0) {
+      const seconds: number = Math.floor((Date.now() - startAt) / 1000);
+      return `深度思考中… ${seconds}s`;
+    }
+    return '深度思考中…';
   }
 
   @Builder
@@ -58,10 +226,13 @@ export struct MessageBubble {
         SymbolGlyph($r('sys.symbol.lightbulb'))
           .fontSize(13)
           .fontColor([$r('app.color.warning')])
-        Text(this.msg.streaming ? '思考中' : '思考过程')
+        // US3：流式期标题改静态"深度思考中…（Ns）"消除跳动；结束后恢复"思考过程"
+        Text(this.msg.streaming ? this.thinkingLabel() : '思考过程')
           .fontSize(12)
           .fontColor($r('app.color.text_secondary'))
-        if (!this.reasoningExpanded) {
+        // US3：流式期折叠分支不渲染 reasoning 实时预览（静态标签即折叠行全部信息）；
+        // streaming=false 恢复现状单行省略预览
+        if (!this.reasoningExpanded && !this.msg.streaming) {
           Text(this.msg.reasoning)
             .fontSize(12)
             .fontColor($r('app.color.text_tertiary'))
@@ -83,13 +254,19 @@ export struct MessageBubble {
       })
 
       if (this.reasoningExpanded) {
-        Text(this.msg.reasoning)
-          .fontSize(12)
-          .fontColor($r('app.color.text_tertiary'))
-          .width('100%')
-          .padding({ left: 8, right: 8, top: 8, bottom: 8 })
-          .borderRadius(8)
-          .backgroundColor($r('app.color.bg_card'))
+        // US3：展开态限高 240vp 内部可滚动（长推理不撑爆气泡）
+        Scroll() {
+          Text(this.msg.reasoning)
+            .fontSize(12)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+            .padding({ left: 8, right: 8, top: 8, bottom: 8 })
+            .borderRadius(8)
+            .backgroundColor($r('app.color.bg_card'))
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 240 })
+        .align(Alignment.Top)
       }
     }
     .width('100%')
@@ -107,7 +284,7 @@ export struct MessageBubble {
         SymbolGlyph($r('sys.symbol.wrench_and_screwdriver'))
           .fontSize(12)
           .fontColor([$r('app.color.brand')])
-        Text(call.name === '' ? '工具调用' : call.name)
+        Text(call.name === '' ? '工具调用' : I18nService.toolLabel(call.name))
           .fontSize(12)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text_primary'))
@@ -207,7 +384,7 @@ export struct MessageBubble {
           Row() {
             Column({ space: 6 }) {
               if (this.msg.text !== '') {
-                MarkdownText({ text: this.msg.text, fontSize: 16, color: $r('app.color.text_bubble_user') })
+                MarkdownText({ msg: this.msg, fontSize: 16, color: $r('app.color.text_bubble_user') })
               }
               if (this.msg.attachments.length > 0) {
                 ForEach(this.msg.attachments, (att: MsgAttachmentModel) => {
@@ -215,9 +392,7 @@ export struct MessageBubble {
                     .fontSize(12)
                     .fontColor($r('app.color.text_bubble_user'))
                     .maxLines(1)
-                    .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-                    .borderRadius(9)
-                    .backgroundColor('#26000000')
+                    .padding({ left: 2, right: 2, top: 4, bottom: 4 })
                 }, (att: MsgAttachmentModel, index: number) => `${index}_${att.filename}`)
               }
               if (this.msg.attachmentNames.length > 0) {
@@ -233,31 +408,32 @@ export struct MessageBubble {
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                       .constraintSize({ maxWidth: 180 })
                   }
-                  .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-                  .borderRadius(9)
-                  .backgroundColor('#26000000')
+                  .padding({ left: 2, right: 2, top: 2, bottom: 2 })
                 }, (name: string) => name)
               }
+              if (this.msg.text !== '' && !this.msg.streaming) {
+                Row({ space: 10 }) {
+                  SymbolGlyph($r('sys.symbol.doc_text'))
+                    .fontSize(12)
+                    .fontColor([$r('app.color.text_bubble_user')])
+                    .height(24)
+                    .onClick((): void => {
+                      this.copyText();
+                    })
+                }
+              }
             }
-            .linearGradient({
-              angle: 140,
-              colors: [[$r('app.color.brand_grad_start'), 0], [$r('app.color.brand_grad_end'), 1]]
-            })
-            .borderRadius({ topLeft: 18, topRight: 18, bottomLeft: 18, bottomRight: 18 })
+            .backgroundColor($r('app.color.bg_bubble_user'))
+            .borderRadius({ topLeft: 18, topRight: 4, bottomLeft: 18, bottomRight: 18 })
             .padding({ left: 14, right: 14, top: 10, bottom: 10 })
             .constraintSize({ maxWidth: '82%' })
             .alignItems(HorizontalAlign.Start)
+            .border({ width: 0.5, color: '#26FFFFFF' })
+            .shadow({ radius: 10, color: '#26E85D75', offsetX: 0, offsetY: 3 })
           }
           .width('100%')
           .justifyContent(FlexAlign.End)
 
-          if (this.msg.text !== '') {
-            Row() {
-              this.copyButton()
-            }
-            .width('100%')
-            .justifyContent(FlexAlign.End)
-          }
           if (this.msg.isSteerQueued) {
             Row() {
               Text('排队中，点击撤回')
@@ -289,11 +465,18 @@ export struct MessageBubble {
               .fontColor($r('app.color.text_secondary'))
               .maxLines(1)
           }
+          // US2：write_todos 面板化——置于 reasoning/text 之前；多次调用链式合并后单个面板呈现
+          if (this.hasWriteTodosCall()) {
+            TodoProgressPanel({
+              items: this.todoPanelItems(),
+              streaming: this.msg.streaming
+            })
+          }
           if (this.msg.reasoning !== '') {
             this.reasoningBlock()
           }
-          if (this.msg.toolCalls.length > 0) {
-            ForEach(this.msg.toolCalls, (call: ToolCallModel) => {
+          if (this.nonTodoToolCalls().length > 0) {
+            ForEach(this.nonTodoToolCalls(), (call: ToolCallModel) => {
               this.toolCallBlock(call)
             }, (call: ToolCallModel, index: number) => `${index}_${call.id}_${call.name}_${call.resultText !== ''}`)
           }
@@ -311,7 +494,7 @@ export struct MessageBubble {
                 .fontSize(11)
                 .fontColor($r('app.color.text_secondary'))
               ForEach(this.msg.toolNames, (name: string) => {
-                Text(name)
+                Text(I18nService.toolLabel(name))
                   .fontSize(11)
                   .fontColor($r('app.color.brand'))
                   .backgroundColor($r('app.color.brand_light'))
@@ -323,21 +506,93 @@ export struct MessageBubble {
             .width('100%')
           }
           if (this.msg.text !== '') {
-            Column() {
-              MarkdownText({ text: this.msg.text, fontSize: 16, color: $r('app.color.text_primary') })
-            }
-            .backgroundColor($r('app.color.bg_bubble_assistant'))
-            .borderRadius({ topLeft: 18, topRight: 18, bottomLeft: 18, bottomRight: 18 })
-            .padding(14)
-            .constraintSize({ maxWidth: '88%' })
-            .alignItems(HorizontalAlign.Start)
+              Column() {
+                MarkdownText({ msg: this.msg, fontSize: 16, color: $r('app.color.text_primary') })
+
+                if (!this.msg.streaming) {
+                  Row({ space: 6 }) {
+                  // 复制
+                  Button({ type: ButtonType.Circle, stateEffect: true }) {
+                    SymbolGlyph($r('sys.symbol.doc_text'))
+                      .fontSize(14)
+                      .fontColor([$r('app.color.text_secondary')])
+                  }
+                  .width(24)
+                  .height(24)
+                  .backgroundColor(UiMaterialKit.glassBg($r('app.color.bg_input')))
+                  .systemMaterial(UiMaterialKit.button())
+                  .border({ width: 0.5, color: $r('app.color.card_stroke') })
+                  .onClick((): void => {
+                    this.copyText();
+                  })
+                  // 朗读：合成中→加载圈；播放中→玫瑰底停止；空闲→喇叭
+                  Button({ type: ButtonType.Circle, stateEffect: true }) {
+                    if (this.speakingBusy) {
+                      LoadingProgress()
+                        .width(14)
+                        .height(14)
+                    } else if (this.speaking) {
+                      SymbolGlyph($r('sys.symbol.stop_circle'))
+                        .fontSize(15)
+                        .fontColor([$r('app.color.text_on_brand')])
+                    } else {
+                      SymbolGlyph($r('sys.symbol.speaker'))
+                        .fontSize(14)
+                        .fontColor([$r('app.color.text_secondary')])
+                    }
+                  }
+                  .width(24)
+                  .height(24)
+                  .backgroundColor(this.speaking ?
+                    $r('app.color.bg_bubble_user') : UiMaterialKit.glassBg($r('app.color.bg_input')))
+                  .systemMaterial(UiMaterialKit.button())
+                  .border({ width: 0.5, color: this.speaking ? '#59E85D75' : $r('app.color.card_stroke') })
+                  .onClick((): void => {
+                    this.toggleSpeak();
+                  })
+                  // 重试
+                  Button({ type: ButtonType.Circle, stateEffect: true }) {
+                    SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+                      .fontSize(14)
+                      .fontColor([$r('app.color.text_secondary')])
+                  }
+                  .width(24)
+                  .height(24)
+                  .backgroundColor(UiMaterialKit.glassBg($r('app.color.bg_input')))
+                  .systemMaterial(UiMaterialKit.button())
+                  .border({ width: 0.5, color: $r('app.color.card_stroke') })
+                  .onClick((): void => {
+                    this.onRetry();
+                  })
+                  // Token 用量并入操作行：按钮居左、用量靠右，Row 垂直居中实现同行平齐
+                  Blank()
+                  if (this.msg.usageIn > 0 || this.msg.usageOut > 0) {
+                    Text(`↑${this.msg.usageIn}`)
+                      .fontSize(10)
+                      .fontColor($r('app.color.text_tertiary'))
+                    Text(`↓${this.msg.usageOut}`)
+                      .fontSize(10)
+                      .fontColor($r('app.color.text_tertiary'))
+                  }
+                }
+                .alignSelf(ItemAlign.Stretch)
+                .margin({ top: 6 })
+              }
+              }
+              .backgroundColor($r('app.color.bg_card'))
+              .borderRadius({ topLeft: 4, topRight: 18, bottomLeft: 18, bottomRight: 18 })
+              .padding({ left: 14, right: 14, top: 14, bottom: 7 })
+              .constraintSize({ maxWidth: '84%', minWidth: this.bubbleMinWidth() })
+              .alignItems(HorizontalAlign.Start)
+              .border({ width: 1, color: $r('app.color.card_stroke') })
+              .shadow({ radius: 8, color: '#0F05243F', offsetX: 0, offsetY: 2 })
           } else if (this.msg.streaming) {
             Row() {
-              StreamingOrbit({ orbitSize: 20 })
+              BusyOctop()
             }
             .backgroundColor($r('app.color.bg_bubble_assistant'))
             .borderRadius({ topLeft: 18, topRight: 18, bottomLeft: 18, bottomRight: 18 })
-            .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+            .padding({ left: 14, right: 16, top: 8, bottom: 6 })
           }
           if (this.msg.errorMessage !== '') {
             Row({ space: 6 }) {
@@ -349,35 +604,20 @@ export struct MessageBubble {
                 .fontColor($r('app.color.danger'))
             }
           }
-          if (!this.msg.streaming && (this.msg.text !== '' || this.msg.errorMessage !== '')) {
-            Row({ space: 12 }) {
-              this.copyButton()
-              Row({ space: 4 }) {
-                SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-                  .fontSize(13)
-                  .fontColor([$r('app.color.text_tertiary')])
-                Text('重试')
-                  .fontSize(11)
-                  .fontColor($r('app.color.text_tertiary'))
-              }
-              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-              .borderRadius(10)
-              .onClick((): void => {
-                this.onRetry();
-              })
-            }
-          }
-          if (this.msg.timestampMs > 0) {
-            Row({ space: 8 }) {
-              if (!this.msg.streaming && (this.msg.usageIn > 0 || this.msg.usageOut > 0)) {
-                Text(`↑${this.msg.usageIn} ↓${this.msg.usageOut}`)
-                  .fontSize(11)
-                  .fontColor($r('app.color.text_tertiary'))
-              }
-              Text(TimeFormat.short(this.msg.timestampMs))
+          if (this.msg.text === '' && this.msg.errorMessage !== '' && !this.msg.streaming) {
+            Row({ space: 4 }) {
+              SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+                .fontSize(13)
+                .fontColor([$r('app.color.text_tertiary')])
+              Text('重试')
                 .fontSize(11)
                 .fontColor($r('app.color.text_tertiary'))
             }
+            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+            .borderRadius(10)
+            .onClick((): void => {
+              this.onRetry();
+            })
           }
         }
         .width('100%')

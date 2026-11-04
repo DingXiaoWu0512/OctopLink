@@ -7,6 +7,7 @@ import { TextDocCreateDialog } from '../../components/TextDocCreateDialog';
 import { PageHeader } from '../../components/PageHeader';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
 import { fileIo, picker } from '@kit.CoreFileKit';
+import { MenuSheetContent, MenuSheetOption } from '../../components/MenuSheet';
 
 /** 路由参数：目标知识库 */
 export class KnowledgeDocsNavParam {
@@ -37,6 +38,11 @@ export struct KnowledgeDocsPage {
   @State editSaving: boolean = false;
   @State sheetOpen: boolean = false;
   @State sheetMode: string = '';
+  @State menuOpen: boolean = false;
+  @State menuTitle: string = '';
+  @State menuMessage: string = '';
+  @State menuOptions: Array<MenuSheetOption> = [];
+  private menuActions: Array<() => void> = [];
   private kbId: string = '';
   private kbName: string = '';
   private createController: CustomDialogController | null = null;
@@ -114,32 +120,37 @@ export struct KnowledgeDocsPage {
 
   /** FAB 菜单：创建在线文档 / 上传文件 / 新建文件夹 */
   private showAddMenu(): void {
-    this.getUIContext().showActionSheet({
-      title: '添加内容',
-      message: '选择要添加的类型',
-      sheets: [
-        {
-          title: '创建 md/txt 文档',
-          action: (): void => {
-            this.showCreate();
-          }
-        },
-        {
-          title: '上传文件',
-          action: (): void => {
-            this.pickAndUpload();
-          }
-        },
-        {
-          title: '新建文件夹',
-          action: (): void => {
-            this.folderPath = '';
-            this.sheetMode = 'folder';
-            this.sheetOpen = true;
-          }
-        }
-      ]
-    });
+    this.menuTitle = '添加内容';
+    this.menuMessage = '选择要添加的类型';
+    this.menuOptions = [
+      new MenuSheetOption($r('sys.symbol.doc_plaintext'), '创建 md/txt 文档', '在线新建文本文档', false),
+      new MenuSheetOption($r('sys.symbol.square_and_arrow_down'), '上传文件', '从本机选择文件上传', false),
+      new MenuSheetOption($r('sys.symbol.folder'), '新建文件夹', '', false)
+    ];
+    this.menuActions = [
+      (): void => {
+        this.showCreate();
+      },
+      (): void => {
+        this.pickAndUpload();
+      },
+      (): void => {
+        this.folderPath = '';
+        this.sheetMode = 'folder';
+        this.sheetOpen = true;
+      }
+    ];
+    this.menuOpen = true;
+  }
+
+  /** 菜单选中：先关半模态再执行预置动作（越界保护） */
+  private onMenuSelect(index: number): void {
+    this.menuOpen = false;
+    if (index < 0 || index >= this.menuActions.length) {
+      return;
+    }
+    const action: () => void = this.menuActions[index];
+    action();
   }
 
   /** 多选文件并逐个上传 */
@@ -235,52 +246,41 @@ export struct KnowledgeDocsPage {
 
   /** 长按文档菜单 */
   private showDocMenu(doc: KnowledgeDocModel): void {
-    const sheets: Array<SheetInfo> = [];
+    const options: Array<MenuSheetOption> = [];
+    const actions: Array<() => void> = [];
     if (!doc.isDir) {
-      sheets.push({
-        title: '预览文本',
-        action: (): void => {
-          this.openPreview(doc);
-        }
+      options.push(new MenuSheetOption($r('sys.symbol.doc_text'), '预览文本', '', false));
+      actions.push((): void => {
+        this.openPreview(doc);
       });
       if (this.isTextDoc(doc.filename)) {
-        sheets.push({
-          title: '编辑内容',
-          action: (): void => {
-            this.openEdit(doc);
-          }
+        options.push(new MenuSheetOption($r('sys.symbol.pencil_line'), '编辑内容', '', false));
+        actions.push((): void => {
+          this.openEdit(doc);
         });
       }
-      sheets.push({
-        title: '下载原件',
-        action: (): void => {
-          this.downloadDoc(doc);
-        }
+      options.push(new MenuSheetOption($r('sys.symbol.square_and_arrow_down'), '下载原件', '', false));
+      actions.push((): void => {
+        this.downloadDoc(doc);
       });
-      sheets.push({
-        title: '重建索引',
-        action: (): void => {
-          this.reindexDoc(doc);
-        }
+      options.push(new MenuSheetOption($r('sys.symbol.arrow_clockwise'), '重建索引', '', false));
+      actions.push((): void => {
+        this.reindexDoc(doc);
       });
     }
-    sheets.push({
-      title: '重命名',
-      action: (): void => {
-        this.openRename(doc);
-      }
+    options.push(new MenuSheetOption($r('sys.symbol.pencil_line'), '重命名', '', false));
+    actions.push((): void => {
+      this.openRename(doc);
     });
-    sheets.push({
-      title: '删除',
-      action: (): void => {
-        this.confirmDelete(doc);
-      }
+    options.push(new MenuSheetOption($r('sys.symbol.trash'), '删除', '', true));
+    actions.push((): void => {
+      this.confirmDelete(doc);
     });
-    this.getUIContext().showActionSheet({
-      title: doc.filename,
-      message: '选择要执行的操作',
-      sheets: sheets
-    });
+    this.menuTitle = doc.filename;
+    this.menuMessage = '选择要执行的操作';
+    this.menuOptions = options;
+    this.menuActions = actions;
+    this.menuOpen = true;
   }
 
   private isTextDoc(fileName: string): boolean {
@@ -796,6 +796,23 @@ export struct KnowledgeDocsPage {
     .backgroundColor($r('app.color.bg_page'))
     .onReady((ctx: NavDestinationContext): void => {
       this.onNavReady(ctx);
+    })
+    .bindSheet($$this.menuOpen, this.menuSheetBuilder, {
+      detents: [SheetSize.FIT_CONTENT],
+      showClose: true,
+      systemMaterial: UiMaterialKit.sheet()
+    })
+  }
+
+  @Builder
+  menuSheetBuilder() {
+    MenuSheetContent({
+      title: this.menuTitle,
+      message: this.menuMessage,
+      options: this.menuOptions,
+      onSelect: (index: number): void => {
+        this.onMenuSelect(index);
+      }
     })
   }
 }

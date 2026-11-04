@@ -1,10 +1,14 @@
+import { HeartbeatConfigModel } from '../../model/AgentModels';
 import { ThreadModel } from '../../model/ThreadModels';
+import { AgentService } from '../../service/AgentService';
 import { ThreadService } from '../../service/ThreadService';
 import { OctopApiError } from '../../net/HttpClient';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
 import { PageHeader } from '../../components/PageHeader';
 import { ErrorRetry } from '../../components/ErrorRetry';
 import { ModelPickerSheet } from '../../components/ModelPickerSheet';
+import { TrajectoryNavParam } from './TrajectoryPage';
+import { picker, fileIo } from '@kit.CoreFileKit';
 
 /** 路由参数：目标会话 */
 export class ThreadSettingsNavParam {
@@ -37,6 +41,7 @@ struct OptionPickerRow {
   @Prop selected: string = '';
   onSelect: (value: string) => void = (value: string): void => {
   };
+
 
   build() {
     Column({ space: 8 }) {
@@ -94,6 +99,7 @@ export struct ThreadSettingsPage {
 
   private agentId: string = '';
   private threadId: string = '';
+  private pathStack: NavPathStack | null = null;
   private modelRef: string = '';
   private modelTouched: boolean = false;
   private loaded: boolean = false;
@@ -119,7 +125,26 @@ export struct ThreadSettingsPage {
     new SettingOption('工具放行', 'allow_tools')
   ];
 
+  // 心跳主动唤醒（专家级配置，独立端点保存）
+  @State hbAvailable: boolean = true;
+  @State hbEnabled: boolean = false;
+  @State hbEvery: string = '1h';
+  @State hbActiveEnabled: boolean = false;
+  @State hbStart: string = '09:00';
+  @State hbEnd: string = '21:00';
+  @State hbSaving: boolean = false;
+  private hbTarget: string = 'user';
+  private readonly hbEveryOptions: Array<SettingOption> = [
+    new SettingOption('30 分钟', '30m'),
+    new SettingOption('1 小时', '1h'),
+    new SettingOption('3 小时', '3h'),
+    new SettingOption('6 小时', '6h'),
+    new SettingOption('12 小时', '12h'),
+    new SettingOption('1 天', '1d')
+  ];
+
   private onNavReady(ctx: NavDestinationContext): void {
+    this.pathStack = ctx.pathStack;
     if (ctx.pathInfo.param instanceof ThreadSettingsNavParam) {
       this.agentId = ctx.pathInfo.param.agentId;
       this.threadId = ctx.pathInfo.param.threadId;
@@ -162,6 +187,54 @@ export struct ThreadSettingsPage {
       this.errorMsg = e instanceof OctopApiError ? e.message : '会话设置加载失败';
     }
     this.loading = false;
+    this.loadHeartbeat();
+  }
+
+  /** 心跳配置：加载失败（旧服务端无此端点）不阻塞页面，仅隐藏分区 */
+  private async loadHeartbeat(): Promise<void> {
+    try {
+      const cfg: HeartbeatConfigModel = await AgentService.getHeartbeatConfig(this.agentId);
+      this.hbEnabled = cfg.enabled;
+      this.hbEvery = cfg.every;
+      this.hbTarget = cfg.target === '' ? 'user' : cfg.target;
+      this.hbActiveEnabled = cfg.activeHoursEnabled;
+      this.hbStart = cfg.activeHoursStart;
+      this.hbEnd = cfg.activeHoursEnd;
+      this.hbAvailable = true;
+    } catch (e) {
+      this.hbAvailable = false;
+    }
+  }
+
+  private isValidTime(text: string): boolean {
+    if (text.length !== 5 || text.charAt(2) !== ':') {
+      return false;
+    }
+    const h: number = Number(text.substring(0, 2));
+    const m: number = Number(text.substring(3));
+    return h >= 0 && h <= 23 && m >= 0 && m <= 59;
+  }
+
+  private async saveHeartbeat(): Promise<void> {
+    if (this.hbSaving) {
+      return;
+    }
+    if (this.hbActiveEnabled && (!this.isValidTime(this.hbStart) || !this.isValidTime(this.hbEnd))) {
+      this.getUIContext().getPromptAction().showToast({ message: '生效时段格式需为 HH:MM' });
+      return;
+    }
+    this.hbSaving = true;
+    try {
+      await AgentService.putHeartbeatConfig(this.agentId, new HeartbeatConfigModel(
+        this.hbEnabled, this.hbEvery, this.hbTarget,
+        this.hbActiveEnabled, this.hbStart, this.hbEnd));
+      this.getUIContext().getPromptAction().showToast({ message: '心跳设置已保存' });
+    } catch (e) {
+      this.getUIContext().getPromptAction().showToast({
+        message: e instanceof OctopApiError ? e.message : '心跳设置保存失败'
+      });
+    }
+    this.hbSaving = false;
   }
 
   private async save(): Promise<void> {
@@ -187,6 +260,31 @@ export struct ThreadSettingsPage {
       });
     }
     this.saving = false;
+  }
+
+  /** 导出未渲染原始会话历史为 JSON 文件 */
+  private exportHistory(): void {
+    ThreadService.exportHistory(this.agentId, this.threadId).then((text: string): void => {
+      const docPicker = new picker.DocumentViewPicker();
+      const saveOptions = new picker.DocumentSaveOptions();
+      saveOptions.newFileNames = [`history_${this.threadId}.json`];
+      docPicker.save(saveOptions).then(async (uris: Array<string>): Promise<void> => {
+        if (uris.length > 0) {
+          const file = fileIo.openSync(uris[0], fileIo.OpenMode.READ_WRITE);
+          try {
+            fileIo.writeSync(file.fd, text);
+          } finally {
+            fileIo.closeSync(file);
+          }
+          this.getUIContext().getPromptAction().showToast({ message: '历史已导出' });
+        }
+      }).catch((): void => {
+        // 用户取消保存
+      });
+    }).catch((e: Object): void => {
+      const message: string = e instanceof OctopApiError ? e.message : '导出失败';
+      this.getUIContext().getPromptAction().showToast({ message });
+    });
   }
 
   build() {
@@ -317,6 +415,110 @@ export struct ThreadSettingsPage {
               .border({ width: 1, color: $r('app.color.card_stroke') })
               .alignItems(HorizontalAlign.Start)
 
+              if (this.hbAvailable) {
+                Column({ space: 14 }) {
+                  Row({ space: 10 }) {
+                    Column({ space: 2 }) {
+                      Text('心跳主动唤醒')
+                        .fontSize(15)
+                        .fontWeight(FontWeight.Medium)
+                        .fontColor($r('app.color.text_primary'))
+                      Text('按间隔自动唤醒专家，可主动给你发消息')
+                        .fontSize(12)
+                        .fontColor($r('app.color.text_tertiary'))
+                    }
+                    .layoutWeight(1)
+                    .alignItems(HorizontalAlign.Start)
+
+                    Toggle({ type: ToggleType.Switch, isOn: this.hbEnabled })
+                      .selectedColor($r('app.color.brand'))
+                      .onChange((on: boolean): void => {
+                        this.hbEnabled = on;
+                      })
+                  }
+                  .width('100%')
+
+                  if (this.hbEnabled) {
+                    OptionPickerRow({
+                      title: '唤醒间隔',
+                      subtitle: '专家自动自检并考虑是否主动联系的频率',
+                      options: this.hbEveryOptions,
+                      selected: this.hbEvery,
+                      onSelect: (value: string): void => {
+                        this.hbEvery = value;
+                      }
+                    })
+
+                    Row({ space: 10 }) {
+                      Column({ space: 2 }) {
+                        Text('仅限生效时段')
+                          .fontSize(15)
+                          .fontWeight(FontWeight.Medium)
+                          .fontColor($r('app.color.text_primary'))
+                        Text('时段外不打扰（如仅白天提醒）')
+                          .fontSize(12)
+                          .fontColor($r('app.color.text_tertiary'))
+                      }
+                      .layoutWeight(1)
+                      .alignItems(HorizontalAlign.Start)
+
+                      Toggle({ type: ToggleType.Switch, isOn: this.hbActiveEnabled })
+                        .selectedColor($r('app.color.brand'))
+                        .onChange((on: boolean): void => {
+                          this.hbActiveEnabled = on;
+                        })
+                    }
+                    .width('100%')
+
+                    if (this.hbActiveEnabled) {
+                      Row({ space: 10 }) {
+                        TextInput({ text: this.hbStart, placeholder: '09:00' })
+                          .fontSize(14)
+                          .height(40)
+                          .layoutWeight(1)
+                          .backgroundColor($r('app.color.bg_input'))
+                          .borderRadius(12)
+                          .onChange((value: string): void => {
+                            this.hbStart = value;
+                          })
+                        Text('至')
+                          .fontSize(13)
+                          .fontColor($r('app.color.text_tertiary'))
+                        TextInput({ text: this.hbEnd, placeholder: '21:00' })
+                          .fontSize(14)
+                          .height(40)
+                          .layoutWeight(1)
+                          .backgroundColor($r('app.color.bg_input'))
+                          .borderRadius(12)
+                          .onChange((value: string): void => {
+                            this.hbEnd = value;
+                          })
+                      }
+                      .width('100%')
+                    }
+
+                    Button(this.hbSaving ? '保存中…' : '保存心跳设置')
+                      .fontSize(14)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor($r('app.color.brand'))
+                      .backgroundColor($r('app.color.brand_light'))
+                      .borderRadius(14)
+                      .height(40)
+                      .width('100%')
+                      .enabled(!this.hbSaving)
+                      .onClick((): void => {
+                        this.saveHeartbeat();
+                      })
+                  }
+                }
+                .width('100%')
+                .padding(14)
+                .borderRadius(16)
+                .backgroundColor($r('app.color.bg_card'))
+                .border({ width: 1, color: $r('app.color.card_stroke') })
+                .alignItems(HorizontalAlign.Start)
+              }
+
               Button(this.saving ? '保存中…' : '保存设置')
                 .fontSize(15)
                 .fontWeight(FontWeight.Bold)
@@ -328,6 +530,34 @@ export struct ThreadSettingsPage {
                 .margin({ top: 4 })
                 .onClick((): void => {
                   this.save();
+                })
+
+              Button('查看对话轨迹')
+                .fontSize(15)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.brand'))
+                .backgroundColor($r('app.color.brand_light'))
+                .borderRadius(16)
+                .height(46)
+                .width('100%')
+                .margin({ top: 2 })
+                .onClick((): void => {
+                  if (this.pathStack !== null) {
+                    this.pathStack.pushPath(new NavPathInfo('trajectory',
+                      new TrajectoryNavParam(this.agentId, this.threadId)));
+                  }
+                })
+
+              Button('导出原始历史（JSON）')
+                .fontSize(14)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.text_secondary'))
+                .backgroundColor($r('app.color.bg_input'))
+                .borderRadius(16)
+                .height(42)
+                .width('100%')
+                .onClick((): void => {
+                  this.exportHistory();
                 })
 
               Text('设置仅对当前会话生效，不影响专家默认配置')
