@@ -1,11 +1,8 @@
 import { ChatMessageModel, ChatRole, ToolCallModel, MsgAttachmentModel } from '../model/MessageModels';
 import { MarkdownText } from './MarkdownText';
 import { BusyOctop } from './StreamingOrbit';
-import { VoiceService } from '../service/VoiceService';
-import { AudioIOService } from '../service/AudioIOService';
 import { LocalTtsService, LocalTtsCallbacks } from '../service/LocalTtsService';
 import { I18nService } from '../service/I18nService';
-import { OctopApiError } from '../net/HttpClient';
 import { UiMaterialKit } from './UiMaterialKit';
 import { TodoProgressPanel } from './TodoProgressPanel';
 import {
@@ -55,8 +52,6 @@ export struct MessageBubble {
   @State toolCallExpanded: boolean = false;
   @State speaking: boolean = false;
   @State speakingBusy: boolean = false;
-  /** 当前朗读走本机引擎链路（true）还是服务器播放器链路（false）：停止按钮分流用 */
-  private speakingLocal: boolean = false;
   onRetry: () => void = (): void => {
   };
   /** 排队追问撤回（气泡下方"撤回"按钮） */
@@ -97,59 +92,21 @@ export struct MessageBubble {
     return text.trim();
   }
 
-  /** 朗读/停止朗读：本机引擎走 CoreSpeechKit 端侧合成（引擎自播）；否则走既有服务器 TTS → 临时文件 → AVPlayer 播放 */
+  /** 朗读/停止朗读：走 CoreSpeechKit 端侧合成（引擎自播），回调驱动按钮三态 */
   private async toggleSpeak(): Promise<void> {
     if (this.speakingBusy) {
       return;
     }
     if (this.speaking) {
       this.speaking = false;
-      if (this.speakingLocal) {
-        LocalTtsService.stop();
-      } else {
-        AudioIOService.stopPlayback();
-      }
+      LocalTtsService.stop();
       return;
     }
     const text: string = this.ttsPlainText();
     if (text === '') {
       return;
     }
-    await LocalTtsService.ensureLoaded();
-    if (LocalTtsService.isLocalBackend()) {
-      await this.speakLocal(text);
-      return;
-    }
     this.speakingBusy = true;
-    this.speakingLocal = false;
-    try {
-      const data: ArrayBuffer = await VoiceService.tts(text);
-      this.speakingBusy = false;
-      this.speaking = true;
-      AudioIOService.playTts(getContext(this), data, (): void => {
-        this.speaking = false;
-      }, (): void => {
-        this.getUIContext().getPromptAction().showToast({ message: '音频播放失败' });
-      });
-    } catch (e) {
-      this.speakingBusy = false;
-      if (e instanceof OctopApiError &&
-        (e.code === 'VOICE_BROWSER_ONLY' || e.code === 'VOICE_KIND_UNSUPPORTED')) {
-        this.getUIContext().getPromptAction().showToast({
-          message: '请先在「我的 → 语音设置」配置 TTS 服务'
-        });
-        return;
-      }
-      this.getUIContext().getPromptAction().showToast({
-        message: e instanceof OctopApiError && e.message !== '' ? e.message : '朗读失败'
-      });
-    }
-  }
-
-  /** 本机引擎朗读：端侧合成播放，回调驱动按钮三态（合成中 loading → 播放中停止态 → 播完复位） */
-  private async speakLocal(text: string): Promise<void> {
-    this.speakingBusy = true;
-    this.speakingLocal = true;
     try {
       await LocalTtsService.speak(text, new BubbleTtsCallbacks(this));
     } catch (e) {

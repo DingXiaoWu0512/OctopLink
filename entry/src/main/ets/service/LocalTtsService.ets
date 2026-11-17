@@ -57,13 +57,12 @@ export class LocalTtsService {
   private static async loadSettings(): Promise<void> {
     try {
       const prefs = AppPrefs.getInstance();
-      const backend = await prefs.getTtsBackend();
       const speed = await prefs.getTtsSpeed();
       const pitch = await prefs.getTtsPitch();
       const volume = await prefs.getTtsVolume();
       const person = await prefs.getTtsPerson();
       const online = await prefs.getTtsOnline();
-      LocalTtsService.settings = new TtsSettingsModel(backend, speed, pitch, volume, person, online);
+      LocalTtsService.settings = new TtsSettingsModel(speed, pitch, volume, person, online);
     } catch (e) {
       Log.error('local tts settings load failed, keep defaults');
     } finally {
@@ -84,23 +83,13 @@ export class LocalTtsService {
     if (clamped.person !== cur.person || clamped.online !== cur.online) {
       LocalTtsService.engineNeedRebuild = true;
     }
-    if (clamped.backend !== cur.backend) {
-      // 朗读中切换后端：停掉当前本机朗读，触发旧请求 onStop 复位按钮
-      LocalTtsService.stop();
-    }
     LocalTtsService.settings = clamped;
     const prefs = AppPrefs.getInstance();
-    await prefs.setTtsBackend(clamped.backend);
     await prefs.setTtsSpeed(clamped.speed);
     await prefs.setTtsPitch(clamped.pitch);
     await prefs.setTtsVolume(clamped.volume);
     await prefs.setTtsPerson(clamped.person);
     await prefs.setTtsOnline(clamped.online);
-  }
-
-  /** 当前朗读后端是否为本机引擎（须在 ensureLoaded 后调用） */
-  static isLocalBackend(): boolean {
-    return LocalTtsService.settings.isLocal();
   }
 
   /**

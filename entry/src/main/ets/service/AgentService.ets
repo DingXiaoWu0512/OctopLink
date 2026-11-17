@@ -10,7 +10,6 @@ import {
 } from '../model/ExpertModels';
 import { ChatAttachmentModel } from '../model/MessageModels';
 import { SlashCommandSpec } from '../model/SlashModels';
-import { TextAssistService } from './TextAssistService';
 import { HeartbeatConfigModel } from '../model/AgentModels';
 import { JsonHelper } from '../utils/JsonHelper';
 
@@ -190,11 +189,6 @@ export class AgentService {
   static async getWelcomeCard(agentId: string): Promise<WelcomeCardModel> {
     const text: string = await HttpClient.getInstance().get(`/api/agents/${agentId}/chat/welcome`);
     return WelcomeCardModel.parse(text);
-  }
-
-  /** 提示词润色（已迁移 POST /api/text/assist，kind=chat.prompt）→ {"text": "..."} */
-  static async polishPrompt(agentId: string, text: string): Promise<string> {
-    return await TextAssistService.polishPrompt(text, agentId);
   }
 
   /** 聊天附件上传（multipart POST /api/agents/{id}/upload，字段名 file） */

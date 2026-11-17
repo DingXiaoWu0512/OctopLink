@@ -2,7 +2,6 @@ import { VoicePresetModel, VoiceProviderInput, VoiceProviderModel } from '../../
 import { TtsSettingsModel, VoiceOptionModel } from '../../model/TtsModels';
 import { VoiceService } from '../../service/VoiceService';
 import { LocalTtsService } from '../../service/LocalTtsService';
-import { AudioIOService } from '../../service/AudioIOService';
 import { OctopApiError } from '../../net/HttpClient';
 import { JsonHelper } from '../../utils/JsonHelper';
 import { Log } from '../../utils/Logger';
@@ -22,6 +21,7 @@ struct VoiceProviderDialog {
   requiresKey: boolean = false;
   existingId: string = '';
   initialApiKey: string = '';
+  initialBaseUrl: string = '';
   initialExtraJson: string = '{}';
   onSaved: () => void = (): void => {
   };
@@ -31,7 +31,7 @@ struct VoiceProviderDialog {
   @State secretKey: string = '';
   @State realtimeOn: boolean = false;
   @State appId: string = '';
-  @State mimoEndpoint: string = 'payg';
+  @State mimoBaseUrl: string = '';
   @State mimoVoiceId: string = '冰糖';
   @State saving: boolean = false;
   @State probing: boolean = false;
@@ -46,8 +46,7 @@ struct VoiceProviderDialog {
     this.realtimeOn = JsonHelper.getBool(extra, 'realtime_stt', false);
     this.appId = JsonHelper.getString(extra, 'app_id', '');
     this.apiKey = this.initialApiKey;
-    this.mimoEndpoint =
-      JsonHelper.getString(extra, 'endpoint_type', 'payg') === 'tokenplan' ? 'tokenplan' : 'payg';
+    this.mimoBaseUrl = this.initialBaseUrl;
     this.mimoVoiceId = JsonHelper.getString(extra, 'voice_id', '冰糖');
   }
 
@@ -69,6 +68,10 @@ struct VoiceProviderDialog {
         return false;
       }
       return true;
+    }
+    if (this.presetKind === 'mimo' && this.mimoBaseUrl.trim() === '') {
+      this.toast('请填写服务接入地址');
+      return false;
     }
     if (this.apiKey.trim() === '') {
       this.toast('请填写 API Key');
@@ -96,9 +99,8 @@ struct VoiceProviderDialog {
         `${this.secretId.trim()}:${this.secretKey.trim()}` : '';
       extraJson = JSON.stringify(extra);
     } else if (this.presetKind === 'mimo') {
-      baseUrl = this.mimoEndpoint === 'tokenplan' ?
-        'https://token-plan-cn.xiaomimimo.com/v1' : 'https://api.xiaomimimo.com/v1';
-      const extra: Record<string, Object> = { 'endpoint_type': this.mimoEndpoint };
+      baseUrl = this.mimoBaseUrl.trim();
+      const extra: Record<string, Object> = {};
       if (this.presetCapability === 'tts') {
         extra['voice_id'] = this.mimoVoiceId;
       }
@@ -180,22 +182,6 @@ struct VoiceProviderDialog {
       .fontColor($r('app.color.text_tertiary'))
       .width('100%')
       .lineHeight(17)
-  }
-
-  @Builder
-  endpointPill(label: string, value: string) {
-    Text(label)
-      .fontSize(13)
-      .fontWeight(this.mimoEndpoint === value ? FontWeight.Bold : FontWeight.Normal)
-      .fontColor(this.mimoEndpoint === value ?
-        $r('app.color.brand') : $r('app.color.text_secondary'))
-      .padding({ left: 14, right: 14, top: 7, bottom: 7 })
-      .borderRadius(16)
-      .backgroundColor(this.mimoEndpoint === value ?
-        $r('app.color.brand_light') : $r('app.color.bg_input'))
-      .onClick((): void => {
-        this.mimoEndpoint = value;
-      })
   }
 
   @Builder
@@ -287,13 +273,19 @@ struct VoiceProviderDialog {
             this.appId = value;
           })
       } else if (this.presetKind === 'mimo') {
-        this.hintLabel('小米 MiMo 语音服务，支持按量付费或 Token 套餐。')
-        this.fieldLabel('接入点')
-        Row({ space: 8 }) {
-          this.endpointPill('按量付费', 'payg')
-          this.endpointPill('Token 套餐', 'tokenplan')
-        }
-        .width('100%')
+        this.hintLabel('填写语音服务接入地址与 API Key，由你的服务器转发调用。')
+        this.fieldLabel('接入地址')
+        TextInput({
+          text: this.mimoBaseUrl,
+          placeholder: 'Base URL，以 /v1 结尾'
+        })
+          .fontSize(15)
+          .height(44)
+          .backgroundColor($r('app.color.bg_input'))
+          .borderRadius(12)
+          .onChange((value: string): void => {
+            this.mimoBaseUrl = value;
+          })
 
         this.fieldLabel('API Key')
         TextInput({
@@ -381,7 +373,7 @@ struct VoiceProviderDialog {
   }
 }
 
-/** 语音设置：STT / TTS 预设卡片、激活切换与按类型配置（源 voice.py） */
+/** 语音设置：STT 预设卡片、激活切换与按类型配置（源 voice.py）；消息朗读固定使用设备端本机引擎 */
 @Component
 export struct VoiceSettingsPage {
   @State loading: boolean = true;
@@ -390,9 +382,6 @@ export struct VoiceSettingsPage {
   @State presets: Array<VoicePresetModel> = [];
   @State providers: Array<VoiceProviderModel> = [];
   @State activeStt: string = 'browser';
-  @State activeTts: string = 'browser';
-  /** 本机引擎是否为当前朗读后端（backend='local'） */
-  @State localTtsActive: boolean = false;
   @State ttsSettings: TtsSettingsModel = TtsSettingsModel.defaults();
   private dialogController: CustomDialogController | null = null;
   private localDialogController: CustomDialogController | null = null;
@@ -404,35 +393,9 @@ export struct VoiceSettingsPage {
     this.load();
   }
 
-  /** 从 LocalTtsService 缓存刷新本机引擎卡片状态与参数摘要 */
+  /** 从 LocalTtsService 缓存刷新本机引擎参数摘要 */
   private refreshLocalTtsState(): void {
     this.ttsSettings = LocalTtsService.getSettings();
-    this.localTtsActive = this.ttsSettings.isLocal();
-  }
-
-  /** 统一停止两条 TTS 链路朗读（本机引擎 + 服务器播放器），激活动作前调用 */
-  private stopAllTts(): void {
-    LocalTtsService.stop();
-    AudioIOService.stopPlayback();
-  }
-
-  /** 以服务器为后端的设置副本（保留本机引擎参数） */
-  private serverBackendSettings(): TtsSettingsModel {
-    const cur: TtsSettingsModel = LocalTtsService.getSettings();
-    return new TtsSettingsModel(TtsSettingsModel.BACKEND_SERVER, cur.speed, cur.pitch,
-      cur.volume, cur.person, cur.online);
-  }
-
-  /** 「本机引擎」设为当前：停双链路朗读 → backend='local' 持久化 */
-  private async activateLocalTts(): Promise<void> {
-    await LocalTtsService.ensureLoaded();
-    this.stopAllTts();
-    const cur: TtsSettingsModel = LocalTtsService.getSettings();
-    const next: TtsSettingsModel = new TtsSettingsModel(TtsSettingsModel.BACKEND_LOCAL, cur.speed,
-      cur.pitch, cur.volume, cur.person, cur.online);
-    await LocalTtsService.setSettings(next);
-    this.refreshLocalTtsState();
-    this.getUIContext().getPromptAction().showToast({ message: '已切换为本机引擎' });
   }
 
   /** 「配置」打开本机引擎参数面板并接线保存 */
@@ -480,7 +443,6 @@ export struct VoiceSettingsPage {
       this.providers = await VoiceService.providers();
       const active = await VoiceService.active();
       this.activeStt = active.stt;
-      this.activeTts = active.tts;
     } catch (e) {
       if (this.presets.length === 0) {
         this.errorMsg = e instanceof OctopApiError ? e.message : '加载失败，请检查网络后重试';
@@ -503,16 +465,6 @@ export struct VoiceSettingsPage {
     return result;
   }
 
-  private ttsPresets(): Array<VoicePresetModel> {
-    const result: Array<VoicePresetModel> = [];
-    for (const preset of this.presets) {
-      if (preset.capability === 'tts' || preset.capability === 'both') {
-        result.push(preset);
-      }
-    }
-    return result;
-  }
-
   private findConfigured(preset: VoicePresetModel): VoiceProviderModel | null {
     for (const provider of this.providers) {
       if (provider.name === preset.id || provider.name === preset.name) {
@@ -526,31 +478,14 @@ export struct VoiceSettingsPage {
     return preset.requiresKey && this.findConfigured(preset) === null && preset.kind !== 'browser';
   }
 
-  private isActive(kind: string, preset: VoicePresetModel): boolean {
-    // 本机引擎为当前后端时，服务器 TTS 预设不显示激活态（激活标识在本机引擎卡片上）
-    if (kind === 'tts' && this.localTtsActive) {
-      return false;
-    }
-    const current: string = kind === 'stt' ? this.activeStt : this.activeTts;
-    return current === preset.id || current === preset.name;
+  private isActive(preset: VoicePresetModel): boolean {
+    return this.activeStt === preset.id || this.activeStt === preset.name;
   }
 
-  private async setActiveProvider(kind: string, preset: VoicePresetModel): Promise<void> {
-    if (kind === 'tts') {
-      // 朗读中切换 TTS：先停双链路朗读
-      this.stopAllTts();
-    }
+  private async setActiveProvider(preset: VoicePresetModel): Promise<void> {
     try {
-      const active = kind === 'stt' ?
-        await VoiceService.putActive(preset.id, null) :
-        await VoiceService.putActive(null, preset.id);
+      const active = await VoiceService.putActive(preset.id, null);
       this.activeStt = active.stt;
-      this.activeTts = active.tts;
-      if (kind === 'tts') {
-        // 服务器 TTS 预设设为当前：后端切回 server（本机引擎卡片取消激活态）
-        await LocalTtsService.setSettings(this.serverBackendSettings());
-        this.refreshLocalTtsState();
-      }
       this.getUIContext().getPromptAction().showToast({ message: '已切换' });
     } catch (e) {
       const message: string = e instanceof OctopApiError ? e.message : '切换失败';
@@ -569,6 +504,7 @@ export struct VoiceSettingsPage {
         requiresKey: preset.requiresKey,
         existingId: existing === null ? '' : existing.id,
         initialApiKey: existing === null ? '' : existing.apiKey,
+        initialBaseUrl: existing === null ? '' : existing.baseUrl,
         initialExtraJson: existing === null ? '{}' : existing.extraJson,
         onSaved: (): void => {
           this.afterConfigureSaved(preset);
@@ -580,7 +516,7 @@ export struct VoiceSettingsPage {
     this.dialogController.open();
   }
 
-  /** 保存成功后刷新；当前生效仍为 browser 时自动启用刚配置的服务（与 dashboard 一致） */
+  /** 保存成功后刷新；当前生效仍为 browser 时自动启用刚配置的语音识别服务（与 dashboard 一致） */
   private async afterConfigureSaved(preset: VoicePresetModel): Promise<void> {
     await this.load();
     if (preset.kind === 'browser') {
@@ -591,17 +527,6 @@ export struct VoiceSettingsPage {
         this.activeStt === 'browser') {
         const active = await VoiceService.putActive(preset.id, null);
         this.activeStt = active.stt;
-        this.activeTts = active.tts;
-      }
-      // 本机引擎为当前后端时不抢后端（本机引擎激活时服务器侧自动启用跳过）
-      if ((preset.capability === 'tts' || preset.capability === 'both') &&
-        this.activeTts === 'browser' && !this.localTtsActive) {
-        this.stopAllTts();
-        const active = await VoiceService.putActive(null, preset.id);
-        this.activeStt = active.stt;
-        this.activeTts = active.tts;
-        await LocalTtsService.setSettings(this.serverBackendSettings());
-        this.refreshLocalTtsState();
       }
     } catch (e) {
       Log.debug('auto activate voice provider failed');
@@ -617,7 +542,7 @@ export struct VoiceSettingsPage {
       .width('100%')
   }
 
-  /** 本机引擎卡片：与服务器 TTS 预设并列的后端选项（CoreSpeechKit 端侧合成） */
+  /** 本机引擎卡片：消息朗读的唯一合成后端（CoreSpeechKit 端侧合成） */
   @Builder
   private localTtsCard() {
     Column({ space: 10 }) {
@@ -663,20 +588,14 @@ export struct VoiceSettingsPage {
           .backgroundColor($r('app.color.success_soft'))
           .borderRadius(5)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+        Text('使用中')
+          .fontSize(10)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.brand'))
+          .backgroundColor($r('app.color.brand_light'))
+          .borderRadius(5)
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
         Blank()
-        Button(this.localTtsActive ? '使用中' : '设为当前')
-          .fontSize(12)
-          .height(30)
-          .borderRadius(15)
-          .padding({ left: 16, right: 16 })
-          .backgroundColor(this.localTtsActive ?
-            $r('app.color.bg_input') : $r('app.color.brand_light'))
-          .fontColor(this.localTtsActive ?
-            $r('app.color.text_tertiary') : $r('app.color.brand'))
-          .enabled(!this.localTtsActive)
-          .onClick((): void => {
-            this.activateLocalTts();
-          })
         Button('配置')
           .fontSize(12)
           .height(30)
@@ -698,7 +617,7 @@ export struct VoiceSettingsPage {
   }
 
   @Builder
-  private presetCard(preset: VoicePresetModel, kind: string) {
+  private presetCard(preset: VoicePresetModel) {
     Column({ space: 10 }) {
       Row({ space: 10 }) {
         Column() {
@@ -770,18 +689,18 @@ export struct VoiceSettingsPage {
               this.openConfigure(preset);
             })
         } else {
-          Button(this.isActive(kind, preset) ? '使用中' : '设为当前')
+          Button(this.isActive(preset) ? '使用中' : '设为当前')
             .fontSize(12)
             .height(30)
             .borderRadius(15)
             .padding({ left: 16, right: 16 })
-            .backgroundColor(this.isActive(kind, preset) ?
+            .backgroundColor(this.isActive(preset) ?
               $r('app.color.bg_input') : $r('app.color.brand_light'))
-            .fontColor(this.isActive(kind, preset) ?
+            .fontColor(this.isActive(preset) ?
               $r('app.color.text_tertiary') : $r('app.color.brand'))
-            .enabled(!this.isActive(kind, preset))
+            .enabled(!this.isActive(preset))
             .onClick((): void => {
-              this.setActiveProvider(kind, preset);
+              this.setActiveProvider(preset);
             })
           if (preset.requiresKey && this.findConfigured(preset) !== null) {
             Button('编辑')
@@ -838,7 +757,7 @@ export struct VoiceSettingsPage {
           Refresh({ refreshing: $$this.refreshing }) {
             Scroll() {
               Column({ space: 10 }) {
-                Text('配置语音识别（STT）与语音合成（TTS）服务，用于语音输入与消息朗读。')
+                Text('配置语音识别（STT）云服务用于语音输入；消息朗读由设备端本机引擎离线合成，无需服务器。')
                   .fontSize(12)
                   .fontColor($r('app.color.text_tertiary'))
                   .width('100%')
@@ -846,16 +765,12 @@ export struct VoiceSettingsPage {
 
                 this.sectionTitle('语音识别（STT）')
                 ForEach(this.sttPresets(), (preset: VoicePresetModel) => {
-                  this.presetCard(preset, 'stt')
+                  this.presetCard(preset)
                 }, (preset: VoicePresetModel) =>
                 `stt_${preset.id}_${this.activeStt}_${this.findConfigured(preset) === null ? 'n' : 'y'}`)
 
-                this.sectionTitle('语音合成（TTS）')
+                this.sectionTitle('语音合成（TTS·本机引擎）')
                 this.localTtsCard()
-                ForEach(this.ttsPresets(), (preset: VoicePresetModel) => {
-                  this.presetCard(preset, 'tts')
-                }, (preset: VoicePresetModel) =>
-                `tts_${preset.id}_${this.localTtsActive ? 'local' : this.activeTts}_${this.findConfigured(preset) === null ? 'n' : 'y'}`)
               }
               .width('100%')
               .padding({ left: 14, right: 14, top: 4, bottom: 24 })

@@ -8,7 +8,7 @@ import {
   VoiceTestResultModel
 } from '../model/VoiceModels';
 
-/** 语音 TTS（/api/voice/*，源 voice.py；TTS 返回原始音频字节流） */
+/** 语音服务配置（/api/voice/*，源 voice.py）：STT/语音服务预设、激活切换与连通性测试 */
 export class VoiceService {
   static async presets(): Promise<Array<VoicePresetModel>> {
     const text: string = await HttpClient.getInstance().get('/api/voice/presets');
@@ -37,22 +37,6 @@ export class VoiceService {
     const text: string =
       await HttpClient.getInstance().put('/api/voice/active', JSON.stringify(body));
     return ActiveVoiceModel.parse(text);
-  }
-
-  /** 语音合成（返回音频字节：mimo → audio/wav，其余 → audio/mpeg） */
-  static async tts(text: string, voiceId: string = '',
-    speed: number = 1.0): Promise<ArrayBuffer> {
-    // 服务器 TTSBody 限制：text 1~8000 字符、speed 0.5~2.0，超限返回 422
-    const clipped: string = text.length > 8000 ? text.substring(0, 8000) : text;
-    const safeSpeed: number = Math.min(Math.max(speed, 0.5), 2.0);
-    const body: Record<string, Object> = {
-      'text': clipped,
-      'speed': safeSpeed
-    };
-    if (voiceId !== '') {
-      body['voice_id'] = voiceId;
-    }
-    return await HttpClient.getInstance().postForBytes('/api/voice/tts', JSON.stringify(body));
   }
 
   /** 新建语音服务（POST /api/admin/voice/providers，需 voice 权限） */

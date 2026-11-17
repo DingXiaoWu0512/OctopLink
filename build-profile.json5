@@ -5,13 +5,13 @@
         "name": "default",
         "type": "HarmonyOS",
         "material": {
-          "storeFile": "C:/Users/13775/证书/OctopLink.p12",
-          "storePassword": "000000192B0E37D50B43057273E768441963756988484E7F701B841DDB71C241705E710CBB13D47227",
-          "keyAlias": "octoplink",
-          "keyPassword": "0000001906CB24A7CE996D73509969364E27501C3DF06F25838C2BFE93E5DF7C5FA0A313C26CCDB436",
+          "certpath": "C:\\Users\\13775\\.ohos\\config\\default_OctopLink_u96It1ue7NAuPR-88Wwr_ANE8HTm2u58rOVH_OhZ7x0=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "000000190769F53C8ACE28EEA4FB92062A387B62C9575077BB80CFB7C80A200155D579F576C60F03E1",
+          "profile": "C:\\Users\\13775\\.ohos\\config\\default_OctopLink_u96It1ue7NAuPR-88Wwr_ANE8HTm2u58rOVH_OhZ7x0=.p7b",
           "signAlg": "SHA256withECDSA",
-          "profile": "C:/Users/13775/证书/OctopLinkRelease.p7b",
-          "certpath": "C:/Users/13775/证书/OctopLink.cer"
+          "storeFile": "C:\\Users\\13775\\.ohos\\config\\default_OctopLink_u96It1ue7NAuPR-88Wwr_ANE8HTm2u58rOVH_OhZ7x0=.p12",
+          "storePassword": "00000019C589638FCA8A067A3001EED41C3779275BD568E54D5E9FC7C36570EB9B00FFFE19A157AC1A"
         }
       }
     ],

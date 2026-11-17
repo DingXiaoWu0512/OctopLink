@@ -9,7 +9,6 @@ const KEY_ROLE = 'role';
 const KEY_APPEARANCE = 'appearance_mode';
 const KEY_IMMERSIVE = 'immersive_light';
 const KEY_PET_VISIBLE = 'pet_visible';
-const KEY_TTS_BACKEND = 'tts_backend';
 const KEY_TTS_SPEED = 'tts_speed';
 const KEY_TTS_PITCH = 'tts_pitch';
 const KEY_TTS_VOLUME = 'tts_volume';
@@ -140,16 +139,6 @@ export class AppPrefs {
 
   async setAppearance(mode: string): Promise<void> {
     await this.putString(KEY_APPEARANCE, mode);
-  }
-
-  /** TTS 后端：'local' 本机引擎 | 'server' 服务器（默认，存量用户行为不变） */
-  async getTtsBackend(): Promise<string> {
-    const value = await this.getString(KEY_TTS_BACKEND);
-    return value === 'local' ? 'local' : 'server';
-  }
-
-  async setTtsBackend(backend: string): Promise<void> {
-    await this.putString(KEY_TTS_BACKEND, backend === 'local' ? 'local' : 'server');
   }
 
   async getTtsSpeed(): Promise<number> {

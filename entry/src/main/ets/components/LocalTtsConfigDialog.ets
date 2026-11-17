@@ -5,7 +5,7 @@ import { LocalTtsService } from '../service/LocalTtsService';
 @CustomDialog
 export struct LocalTtsConfigDialog {
   controller?: CustomDialogController;
-  /** 打开面板时的设置快照（backend 由语音设置页管理，此处只调参数） */
+  /** 打开面板时的设置快照（此处只调参数） */
   initial: TtsSettingsModel = TtsSettingsModel.defaults();
   onSaved: (settings: TtsSettingsModel) => void = (): void => {
   };
@@ -50,7 +50,7 @@ export struct LocalTtsConfigDialog {
   /** 保存：构造完整设置（构造器内 clamp），关闭面板并回传 */
   private save(): void {
     const settings: TtsSettingsModel =
-      new TtsSettingsModel(this.initial.backend, this.speed, this.pitch, this.volume, this.person, this.online);
+      new TtsSettingsModel(this.speed, this.pitch, this.volume, this.person, this.online);
     this.controller?.close();
     this.onSaved(settings);
   }

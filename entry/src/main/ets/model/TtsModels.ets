@@ -1,12 +1,5 @@
-/** TTS 后端选择与本机引擎参数模型（App 级全局、preferences 持久化） */
+/** 本机引擎（CoreSpeechKit 端侧合成）参数模型（App 级全局、preferences 持久化） */
 export class TtsSettingsModel {
-  /** 本机引擎后端（CoreSpeechKit 端侧合成，零流量） */
-  static readonly BACKEND_LOCAL: string = 'local';
-  /** 服务器 TTS 后端（既有 VoiceService 链路） */
-  static readonly BACKEND_SERVER: string = 'server';
-
-  /** 当前朗读后端：'local' | 'server' */
-  backend: string;
   /** 语速 0.5-2.0，步进 0.05 */
   speed: number;
   /** 音调 0.5-2.0，步进 0.05 */
@@ -18,9 +11,7 @@ export class TtsSettingsModel {
   /** 合成模式：1=离线（受支持）| 0=在线（引擎暂不支持） */
   online: number;
 
-  constructor(backend: string, speed: number, pitch: number, volume: number, person: number, online: number) {
-    this.backend = backend === TtsSettingsModel.BACKEND_LOCAL ?
-      TtsSettingsModel.BACKEND_LOCAL : TtsSettingsModel.BACKEND_SERVER;
+  constructor(speed: number, pitch: number, volume: number, person: number, online: number) {
     this.speed = TtsSettingsModel.clamp(speed, 0.5, 2.0, 1.0);
     this.pitch = TtsSettingsModel.clamp(pitch, 0.5, 2.0, 1.0);
     this.volume = TtsSettingsModel.clamp(volume, 0, 2, 2);
@@ -28,9 +19,9 @@ export class TtsSettingsModel {
     this.online = online === 0 ? 0 : 1;
   }
 
-  /** 默认设置（backend='server'，存量用户行为零变化） */
+  /** 默认设置 */
   static defaults(): TtsSettingsModel {
-    return new TtsSettingsModel(TtsSettingsModel.BACKEND_SERVER, 1.0, 1.0, 2, 13, 1);
+    return new TtsSettingsModel(1.0, 1.0, 2, 13, 1);
   }
 
   /** 数值归一：NaN 回退默认值，越界取边界 */
@@ -41,13 +32,9 @@ export class TtsSettingsModel {
     return Math.min(max, Math.max(min, value));
   }
 
-  isLocal(): boolean {
-    return this.backend === TtsSettingsModel.BACKEND_LOCAL;
-  }
-
   /** 防御性拷贝（调用方修改不影响服务内存缓存） */
   copy(): TtsSettingsModel {
-    return new TtsSettingsModel(this.backend, this.speed, this.pitch, this.volume, this.person, this.online);
+    return new TtsSettingsModel(this.speed, this.pitch, this.volume, this.person, this.online);
   }
 }
 

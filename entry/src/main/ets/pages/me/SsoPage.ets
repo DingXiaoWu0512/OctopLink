@@ -184,7 +184,7 @@ struct SsoProviderEditDialog {
       if (this.kind === 'oidc') {
         TextInput({
           text: this.issuerText,
-          placeholder: 'Issuer，如 https://accounts.google.com'
+          placeholder: 'Issuer，如 https://sso.example.com'
         })
           .fontSize(14)
           .height(42)

@@ -19,7 +19,6 @@ import { CommandPalette } from '../../components/CommandPalette';
 import { ModelPickerSheet } from '../../components/ModelPickerSheet';
 import { UiMaterialKit } from '../../components/UiMaterialKit';
 import { AgentAvatar } from '../../components/AgentAvatar';
-import { AudioIOService } from '../../service/AudioIOService';
 import { LocalTtsService } from '../../service/LocalTtsService';
 import { TimeFormat } from '../../utils/TimeFormat';
 import { Log } from '../../utils/Logger';
@@ -82,7 +81,6 @@ export struct ChatHomeTab {
   @State agentsLoading: boolean = false;
   @State attachments: Array<ChatAttachmentModel> = [];
   @State uploading: boolean = false;
-  @State polishing: boolean = false;
   @State attachSheetOpen: boolean = false;
   @State contextUsage: ContextUsageModel | null = null;
   @State hitlPending: HitlRequestModel | null = null;
@@ -199,10 +197,9 @@ export struct ChatHomeTab {
     this.stopTtsPlayback();
   }
 
-  /** 停止两条链路的朗读（本机引擎 + 服务器播放器）：离页/切会话兜底，不持有引擎引用 */
+  /** 停止本机引擎朗读：离页/切会话兜底，不持有引擎引用 */
   private stopTtsPlayback(): void {
     LocalTtsService.stop();
-    AudioIOService.stopPlayback();
   }
 
   private async pickDefaultAgent(): Promise<void> {
@@ -1367,27 +1364,6 @@ export struct ChatHomeTab {
     this.attachments = this.attachments.filter((item: ChatAttachmentModel): boolean => item !== att);
   }
 
-  /** 润色输入框提示词 */
-  private async polishInput(): Promise<void> {
-    const text: string = this.inputText.trim();
-    const agentId: string = AppStorage.get<string>(SessionStore.KEY_AGENT_ID) ?? '';
-    if (text === '' || agentId === '' || this.polishing) {
-      return;
-    }
-    this.polishing = true;
-    try {
-      const polished: string = await AgentService.polishPrompt(agentId, text);
-      if (polished !== '') {
-        this.inputText = polished;
-      }
-    } catch (e) {
-      this.getUIContext().getPromptAction().showToast({
-        message: e instanceof OctopApiError ? e.message : '润色失败'
-      });
-    }
-    this.polishing = false;
-  }
-
   /** 斜杠查询：输入以 "/" 开头时返回命令词（空格前的部分，支持 "/命令 参数"），否则 null */
   private slashQuery(): string | null {
     const text: string = this.inputText;
@@ -2390,6 +2366,16 @@ export struct ChatHomeTab {
               .height(this.chatTitleHeight())
               .width('100%')
               .hitTestBehavior(HitTestMode.None)
+            // AIGC 显式标识：AI 生成内容提示（《人工智能生成合成内容标识办法》）
+            ListItem() {
+              Text('内容由 AI 生成，请注意甄别')
+                .fontSize(10)
+                .fontColor($r('app.color.text_tertiary'))
+                .opacity(0.5)
+                .width('100%')
+                .textAlign(TextAlign.Center)
+                .hitTestBehavior(HitTestMode.None)
+            }
             if (this.historyHasMore) {
               ListItem() {
                 Row({ space: 6 }) {
@@ -2739,27 +2725,6 @@ export struct ChatHomeTab {
           .bindSheet($$this.attachSheetOpen, this.attachSheetBuilder, {
             detents: [SheetSize.FIT_CONTENT],
             systemMaterial: UiMaterialKit.sheet()
-          })
-
-          Button({ type: ButtonType.Circle, stateEffect: true }) {
-            if (this.polishing) {
-              LoadingProgress()
-                .width(18)
-                .height(18)
-                .color($r('app.color.brand'))
-            } else {
-              SymbolGlyph($r('sys.symbol.wand_and_stars'))
-                .fontSize(20)
-                .fontColor([$r('app.color.icon_secondary')])
-            }
-          }
-          .width(34)
-          .height(34)
-          .backgroundColor(UiMaterialKit.glassBg($r('app.color.bg_input')))
-          .systemMaterial(UiMaterialKit.pill())
-          .border({ width: 1, color: $r('app.color.card_stroke') })
-          .onClick((): void => {
-            this.polishInput();
           })
 
           Button({ stateEffect: true }) {
