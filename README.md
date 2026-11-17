@@ -17,9 +17,26 @@
 
 **OctopLink** 是基于 **HarmonyOS (ArkTS)** 开发的智能体对话客户端，完整对接 **TencentCloud Octop** 智能体平台，提供原生级的多智能体管理、流式对话、工作区协作、语音交互、记忆系统等能力。
 
-> 📦 **最新版本**: [v1.0.0](https://github.com/dwc13775953197-spec/OctopLink/releases/tag/v1.0.0) — `OctopLink-default-signed.hap` (8.4 MB)
+> 📦 **最新版本**: [v1.0.0](https://github.com/dwc13775953197-spec/OctopLink/releases/tag/v1.0.0) — [下载签名安装包 `OctopLink-v1.0.0.hap`](https://github.com/dwc13775953197-spec/OctopLink/releases/download/v1.0.0/OctopLink-v1.0.0.hap)（8.0 MB）
 
 ---
+
+## 📱 应用截图
+
+以下为 OctopLink HarmonyOS 客户端的实际界面截图。
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/screenshot-01.jpg" width="220" alt="OctopLink 应用截图 1"><br><b>客户端界面 1</b></td>
+    <td align="center"><img src="docs/images/screenshot-02.jpg" width="220" alt="OctopLink 应用截图 2"><br><b>客户端界面 2</b></td>
+    <td align="center"><img src="docs/images/screenshot-03.jpg" width="220" alt="OctopLink 应用截图 3"><br><b>客户端界面 3</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/screenshot-04.jpg" width="220" alt="OctopLink 应用截图 4"><br><b>客户端界面 4</b></td>
+    <td align="center"><img src="docs/images/screenshot-05.jpg" width="220" alt="OctopLink 应用截图 5"><br><b>客户端界面 5</b></td>
+    <td align="center"><img src="docs/images/screenshot-06.jpg" width="220" alt="OctopLink 应用截图 6"><br><b>客户端界面 6</b></td>
+  </tr>
+</table>
 
 ## ✨ 核心功能
 
@@ -131,7 +148,7 @@ OctopLink/
 │   │   ├── service/               # 28 个业务服务
 │   │   ├── store/                 # SessionStore, AppearanceStore, AppPrefs
 │   │   └── utils/                 # JsonHelper, ParseWriteTodos, TextPacer...
-│   └── src/main/resources/        # 媒体/颜色/字符串/原始文件
+│   │   └── src/main/resources/        # 媒体/颜色/字符串/原始文件
 ├── docs/                          # 文档
 │   ├── api-contract.md            # API 契约 (源码级，424 paths)
 │   ├── api-gap-audit.md           # 覆盖度审计 (58% REST, 0 drift)
@@ -181,7 +198,7 @@ hdc install entry/build/default/outputs/default/OctopLink-default-signed.hap
 
 ### 直接下载安装包
 - **Release 页**：[v1.0.0 HAP 下载](https://github.com/dwc13775953197-spec/OctopLink/releases/tag/v1.0.0)
-- 文件：`OctopLink-default-signed.hap` (8.4 MB, arm64, 已签名)
+- **直接下载**：[OctopLink-v1.0.0.hap](https://github.com/dwc13775953197-spec/OctopLink/releases/download/v1.0.0/OctopLink-v1.0.0.hap)（8.0 MB，arm64，已签名）
 
 ---
 
